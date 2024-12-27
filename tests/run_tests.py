@@ -17,7 +17,7 @@ def get_base64_size(s: str) -> Optional[int]:
 
 init(autoreset=True)
 
-test_files = glob.glob("*.txt")
+test_files = glob.glob("cases/*.txt")
 test_files.sort()
 n_tests = len(test_files)
 if n_tests == 0:
