@@ -40,24 +40,60 @@ def process_test(
     """
     i, test_file, name_width, n_tests, bin_path = args
 
-    with open(test_file, "r") as f:
-        original_block = f.read().split()[1]
+    index_str = f"{Fore.YELLOW}{i:>4}{Style.RESET_ALL}"
 
-    original_size = get_base64_size(original_block)
-    if original_size is None or original_size > 2 ** 21:
+    try:
+        with open(test_file, "r") as f:
+            original_block = f.read().split()[1]
+    except Exception as e:
+        size_str = f"{Fore.CYAN}{'?':>7}{Style.RESET_ALL}"
+        message = (
+            f"{index_str} {test_file:<{name_width}} {size_str}   "
+            f"{Fore.RED}PE failed to read file: {e}{Style.RESET_ALL}"
+        )
         return {
             "index": i,
             "test_file": test_file,
-            "message": f"{Fore.RED}PE invalid or too large original base64{Style.RESET_ALL}",
+            "message": message,
+            "success": False,
+            "compressed_size": None,
+            "points": 0.0,
+            "original_size": None,
+        }
+
+    original_size = get_base64_size(original_block)
+    if original_size is None:
+        size_str = f"{Fore.CYAN}{'?':>7}{Style.RESET_ALL}"
+        message = (
+            f"{index_str} {test_file:<{name_width}} {size_str}   "
+            f"{Fore.RED}PE invalid base64 in file{Style.RESET_ALL}"
+        )
+        return {
+            "index": i,
+            "test_file": test_file,
+            "message": message,
+            "success": False,
+            "compressed_size": None,
+            "points": 0.0,
+            "original_size": None,
+        }
+
+    size_str = f"{Fore.CYAN}{original_size:>7}{Style.RESET_ALL}"
+
+    if original_size > 2 ** 21:
+        message = (
+            f"{index_str} {test_file:<{name_width}} {size_str}   "
+            f"{Fore.RED}PE original input too large ({original_size}){Style.RESET_ALL}"
+        )
+        return {
+            "index": i,
+            "test_file": test_file,
+            "message": message,
             "success": False,
             "compressed_size": None,
             "points": 0.0,
             "original_size": original_size,
         }
-
-    # Prepare partial output for the result line
-    index_str = f"{Fore.YELLOW}{i:>4}{Style.RESET_ALL}"
-    size_str = f"{Fore.CYAN}{original_size:>7}{Style.RESET_ALL}"
 
     # 1) Compress
     try:
@@ -69,20 +105,28 @@ def process_test(
             timeout=2.0,
         )
     except subprocess.TimeoutExpired:
+        message = (
+            f"{index_str} {test_file:<{name_width}} {size_str}   "
+            f"{Fore.RED}TL timeout expired (compression){Style.RESET_ALL}"
+        )
         return {
             "index": i,
             "test_file": test_file,
-            "message": f"{Fore.RED}TL timeout expired{Style.RESET_ALL}",
+            "message": message,
             "success": False,
             "compressed_size": None,
             "points": 0.0,
             "original_size": original_size,
         }
     if result.returncode != 0:
+        message = (
+            f"{index_str} {test_file:<{name_width}} {size_str}   "
+            f"{Fore.RED}RE exitcode={result.returncode} (compression){Style.RESET_ALL}"
+        )
         return {
             "index": i,
             "test_file": test_file,
-            "message": f"{Fore.RED}RE exitcode={result.returncode}{Style.RESET_ALL}",
+            "message": message,
             "success": False,
             "compressed_size": None,
             "points": 0.0,
@@ -92,20 +136,28 @@ def process_test(
     compressed_block = result.stdout.strip()
     compressed_size = get_base64_size(compressed_block)
     if compressed_size is None:
+        message = (
+            f"{index_str} {test_file:<{name_width}} {size_str}   "
+            f"{Fore.RED}PE invalid base64 (compression output){Style.RESET_ALL}"
+        )
         return {
             "index": i,
             "test_file": test_file,
-            "message": f"{Fore.RED}PE invalid base64{Style.RESET_ALL}",
+            "message": message,
             "success": False,
             "compressed_size": None,
             "points": 0.0,
             "original_size": original_size,
         }
     if compressed_size > 2 ** 21:
+        message = (
+            f"{index_str} {test_file:<{name_width}} {size_str}   "
+            f"{Fore.RED}PE too big output ({compressed_size}){Style.RESET_ALL}"
+        )
         return {
             "index": i,
             "test_file": test_file,
-            "message": f"{Fore.RED}PE too big output ({compressed_size}){Style.RESET_ALL}",
+            "message": message,
             "success": False,
             "compressed_size": compressed_size,
             "points": 0.0,
@@ -122,20 +174,28 @@ def process_test(
             timeout=2.0,
         )
     except subprocess.TimeoutExpired:
+        message = (
+            f"{index_str} {test_file:<{name_width}} {size_str}   "
+            f"{Fore.RED}TL timeout expired (decompression){Style.RESET_ALL}"
+        )
         return {
             "index": i,
             "test_file": test_file,
-            "message": f"{Fore.RED}TL timeout expired{Style.RESET_ALL}",
+            "message": message,
             "success": False,
             "compressed_size": compressed_size,
             "points": 0.0,
             "original_size": original_size,
         }
     if result.returncode != 0:
+        message = (
+            f"{index_str} {test_file:<{name_width}} {size_str}   "
+            f"{Fore.RED}RE exitcode={result.returncode} (decompression){Style.RESET_ALL}"
+        )
         return {
             "index": i,
             "test_file": test_file,
-            "message": f"{Fore.RED}RE exitcode={result.returncode}{Style.RESET_ALL}",
+            "message": message,
             "success": False,
             "compressed_size": compressed_size,
             "points": 0.0,
@@ -144,10 +204,14 @@ def process_test(
 
     decompressed_block = result.stdout.strip()
     if decompressed_block != original_block:
+        message = (
+            f"{index_str} {test_file:<{name_width}} {size_str}   "
+            f"{Fore.RED}WA wrong decompressed block{Style.RESET_ALL}"
+        )
         return {
             "index": i,
             "test_file": test_file,
-            "message": f"{Fore.RED}WA wrong decompressed block{Style.RESET_ALL}",
+            "message": message,
             "success": False,
             "compressed_size": compressed_size,
             "points": 0.0,
