@@ -1,3 +1,4 @@
+import argparse
 import base64
 import binascii
 import glob
@@ -5,9 +6,6 @@ import os
 import subprocess
 from typing import Optional, Tuple, Dict, Any
 
-# NOTE: multiprocess has a similar interface to multiprocessing,
-#       but can sometimes handle more complex data structures.
-#       Make sure you have it installed, e.g. pip install multiprocess
 from multiprocess import Pool
 
 from colorama import Fore, Style, init
@@ -23,7 +21,7 @@ def get_base64_size(s: str) -> Optional[int]:
 
 
 def process_test(
-    args: Tuple[int, str, int, int]
+    args: Tuple[int, str, int, int, str]
 ) -> Dict[str, Any]:
     """
     Process a single test file by:
@@ -32,8 +30,15 @@ def process_test(
     3) Running decompression
     4) Computing the points if successful
     Returns a dict with all info needed for printing & summarizing.
+    
+    :param args: A tuple containing:
+        - i (int): Index of this test (1-based)
+        - test_file (str): Path to the test file
+        - name_width (int): Max width for the test name (for aligned printing)
+        - n_tests (int): Total number of tests
+        - bin_path (str): Path to the solution binary
     """
-    i, test_file, name_width, n_tests = args
+    i, test_file, name_width, n_tests, bin_path = args
 
     with open(test_file, "r") as f:
         original_block = f.read().split()[1]
@@ -51,14 +56,13 @@ def process_test(
         }
 
     # Prepare partial output for the result line
-    # We store these so we can print them in the main thread in consistent formatting.
     index_str = f"{Fore.YELLOW}{i:>4}{Style.RESET_ALL}"
     size_str = f"{Fore.CYAN}{original_size:>7}{Style.RESET_ALL}"
 
     # 1) Compress
     try:
         result = subprocess.run(
-            "../build/solution",
+            bin_path,
             input="compress\n" + original_block,
             text=True,
             capture_output=True,
@@ -111,7 +115,7 @@ def process_test(
     # 2) Decompress
     try:
         result = subprocess.run(
-            "../build/solution",
+            bin_path,
             input="decompress\n" + compressed_block,
             text=True,
             capture_output=True,
@@ -174,6 +178,17 @@ def process_test(
 def main():
     init(autoreset=True)
 
+    # Set up command line argument parsing
+    parser = argparse.ArgumentParser(
+        description="Run compress/decompress tests in parallel."
+    )
+    parser.add_argument(
+        "--bin",
+        default="../build/solution",
+        help="Path to the solution binary (default: ../build/solution).",
+    )
+    args = parser.parse_args()
+
     # Gather test files
     test_files = glob.glob("cases/*.txt")
     test_files.sort()
@@ -189,7 +204,7 @@ def main():
 
     # Prepare arguments for each test
     args_list = [
-        (i + 1, test_file, name_width, n_tests)
+        (i + 1, test_file, name_width, n_tests, args.bin)
         for i, test_file in enumerate(test_files)
     ]
 
@@ -197,8 +212,6 @@ def main():
     with Pool() as pool:
         results = pool.map(process_test, args_list)
 
-    # Sort results by index (map keeps order, but just to be sure)
-    # (If you rely on map's guarantee of ordering, you can skip sorting)
     results.sort(key=lambda x: x["index"])
 
     n_ok = 0
@@ -206,7 +219,6 @@ def main():
 
     # Print the per-test results
     for res in results:
-        # If process_test encountered an error, it constructed a short error message
         if "message" in res:
             print(res["message"])
         else:
