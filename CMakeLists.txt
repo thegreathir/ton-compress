@@ -19,6 +19,9 @@ link_directories(.)
 add_executable(solution solution.cpp)
 target_link_libraries(solution PRIVATE ton_crypto_lib)
 
+add_executable(solution_lzma_long solution_lzma_long.cpp)
+target_link_libraries(solution_lzma_long PRIVATE ton_crypto_lib)
+
 # 01 - Cells.cpp
 add_executable(Cells "01 - Cells.cpp")
 target_link_libraries(Cells PRIVATE ton_crypto_lib)
