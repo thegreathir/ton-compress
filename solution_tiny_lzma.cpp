@@ -153,8 +153,8 @@ static void rangeEncodeMB(RangeEncoder_t *e, uint16_t *p_prob, uint32_t byte,
 }
 #define LZ_LEN_MAX 273
 #define LZ_DIST_MAX_PLUS1 0x40000000
-#define HASH_LEVEL 16
-#define HASH_N 21
+#define HASH_LEVEL 2
+#define HASH_N 23
 #define HASH_SIZE (1 << HASH_N)
 #define HASH_MASK ((1 << HASH_N) - 1)
 #define INVALID_HASH_ITEM (~((size_t)0))
@@ -370,16 +370,17 @@ static uint8_t stateTransition(uint8_t state, PACKET_t type) {
 }
 #define N_STATES 12
 #define N_LIT_STATES 7
-#define LC 4
+#define LC 8
 #define N_PREV_BYTE_LC_MSBS (1 << LC)
 #define LC_SHIFT (8 - LC)
 #define LC_MASK ((1 << LC) - 1)
-#define N_LIT_POS_STATES (1 << 0)
-#define LP_MASK ((1 << 0) - 1)
-#define PB 3
+#define LP_PARAM 0
+#define N_LIT_POS_STATES (1 << LP_PARAM)
+#define LP_MASK ((1 << LP_PARAM) - 1)
+#define PB 0
 #define N_POS_STATES (1 << PB)
 #define PB_MASK ((1 << PB) - 1)
-#define LCLPPB_BYTE ((uint8_t)((PB * 5 + 0) * 9 + LC))
+#define LCLPPB_BYTE ((uint8_t)((PB * 5 + LP_PARAM) * 9 + LC))
 #define INIT_PROBS(probs)                                                      \
   {                                                                            \
     uint16_t *p = (uint16_t *)(probs);                                         \
@@ -632,7 +633,7 @@ static int lzmaEncode(const uint8_t *p_src, size_t src_len, uint8_t *p_dst,
   ((LZ_DIST_MAX_PLUS1 > LZMA_DIC_MIN) ? LZ_DIST_MAX_PLUS1 : LZMA_DIC_MIN)
 #define LZMA_HEADER_LEN 13
 static int writeLzmaHeader(uint8_t *p_dst, size_t *p_dst_len,
-                           size_t uncompressed_len,
+                          size_t uncompressed_len,
                            uint8_t uncompressed_len_known) {
   uint32_t i;
   if (*p_dst_len < LZMA_HEADER_LEN)
