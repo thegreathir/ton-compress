@@ -44,8 +44,6 @@ EXTERN_C_BEGIN
 #define SZ_ERROR_NO_ARCHIVE 17
 typedef int SRes;
 #ifdef _WIN32
-typedef unsigned WRes;
-#define MY_SRes_HRESULT_FROM_WRes(x) HRESULT_FROM_WIN32(x)
 #else
 typedef int WRes;
 #define MY__FACILITY_WIN32 7
@@ -88,7 +86,6 @@ typedef int BoolInt;
 #define True 1
 #define False 0
 #ifdef _WIN32
-#define MY_STD_CALL __stdcall
 #else
 #define MY_STD_CALL 
 #endif
@@ -218,10 +215,6 @@ struct ISzAlloc
 #define CONTAINER_FROM_VTBL(ptr,type,m) MY_container_of(ptr, type, m)
 #define CONTAINER_FROM_VTBL_CLS(ptr,type,m) CONTAINER_FROM_VTBL_SIMPLE(ptr, type, m)
 #ifdef _WIN32
-#define CHAR_PATH_SEPARATOR '\\'
-#define WCHAR_PATH_SEPARATOR L'\\'
-#define STRING_PATH_SEPARATOR "\\"
-#define WSTRING_PATH_SEPARATOR L"\\"
 #else
 #define CHAR_PATH_SEPARATOR '/'
 #define WCHAR_PATH_SEPARATOR L'/'
@@ -261,11 +254,6 @@ EXTERN_C_BEGIN
 void *MyAlloc(size_t size);
 void MyFree(void *address);
 #ifdef _WIN32
-void SetLargePageSize();
-void *MidAlloc(size_t size);
-void MidFree(void *address);
-void *BigAlloc(size_t size);
-void BigFree(void *address);
 #else
 #define MidAlloc(size) MyAlloc(size)
 #define MidFree(address) MyFree(address)
@@ -526,72 +514,6 @@ void MyFree(void *address)
   free(address);
 }
 #ifdef _WIN32
-void *MidAlloc(size_t size)
-{
-  if (size == 0)
- return NULL;
-  PRINT_ALLOC("Alloc-Mid", g_allocCountMid, size, NULL);
-  return VirtualAlloc(NULL, size, MEM_COMMIT, PAGE_READWRITE);
-}
-void MidFree(void *address)
-{
-  PRINT_FREE("Free-Mid", g_allocCountMid, address);
-  if (!address)
- return;
-  VirtualFree(address, 0, MEM_RELEASE);
-}
-#ifndef MEM_LARGE_PAGES
-#undef _7ZIP_LARGE_PAGES
-#endif
-#ifdef _7ZIP_LARGE_PAGES
-SIZE_T g_LargePageSize = 0;
-typedef SIZE_T (WINAPI *GetLargePageMinimumP)();
-#endif
-void SetLargePageSize()
-{
-  #ifdef _7ZIP_LARGE_PAGES
-  SIZE_T size;
-  GetLargePageMinimumP largePageMinimum = (GetLargePageMinimumP)
-  GetProcAddress(GetModuleHandle(TEXT("kernel32.dll")), "GetLargePageMinimum");
-  if (!largePageMinimum)
- return;
-  size = largePageMinimum();
-  if (size == 0 || (size & (size - 1)) != 0)
- return;
-  g_LargePageSize = size;
-  #endif
-}
-void *BigAlloc(size_t size)
-{
-  if (size == 0)
- return NULL;
-  PRINT_ALLOC("Alloc-Big", g_allocCountBig, size, NULL);
-  #ifdef _7ZIP_LARGE_PAGES
-  {
- SIZE_T ps = g_LargePageSize;
- if (ps != 0 && ps <= (1 << 30) && size > (ps / 2))
- {
-   size_t size2;
-   ps--;
-   size2 = (size + ps) & ~ps;
-   if (size2 >= size)
-   {
-  void *res = VirtualAlloc(NULL, size2, MEM_COMMIT | MEM_LARGE_PAGES, PAGE_READWRITE);
-  if (res)
-    return res;
-   }
- }
-  }
-  #endif
-  return VirtualAlloc(NULL, size, MEM_COMMIT, PAGE_READWRITE);
-}
-void BigFree(void *address)
-{
-  PRINT_FREE("Free-Big", g_allocCountBig, address);
-  if (!address)
- return;
-  VirtualFree(address, 0, MEM_RELEASE);
-}
 #endif
 static void *SzAlloc(ISzAllocPtr p, size_t size) { UNUSED_VAR(p); return MyAlloc(size); }
 static void SzFree(ISzAllocPtr p, void *address) { UNUSED_VAR(p); MyFree(address); }
@@ -603,7 +525,6 @@ static void *SzBigAlloc(ISzAllocPtr p, size_t size) { UNUSED_VAR(p); return BigA
 static void SzBigFree(ISzAllocPtr p, void *address) { UNUSED_VAR(p); BigFree(address); }
 const ISzAlloc g_BigAlloc = { SzBigAlloc, SzBigFree };
 #ifdef _WIN32
-  typedef UINT_PTR UIntPtr;
 #else
   typedef ptrdiff_t UIntPtr;
 #endif
@@ -658,53 +579,6 @@ static void SzAlignedFree(ISzAllocPtr pp, void *address)
 const ISzAlloc g_AlignedAlloc = { SzAlignedAlloc, SzAlignedFree };
 #define MY_ALIGN_PTR_DOWN_1(p) MY_ALIGN_PTR_DOWN(p, sizeof(void *))
 #define REAL_BLOCK_PTR_VAR(p) ((void **)MY_ALIGN_PTR_DOWN_1(p))[-1]
-static void *AlignOffsetAlloc_Alloc(ISzAllocPtr pp, size_t size)
-{
-  CAlignOffsetAlloc *p = CONTAINER_FROM_VTBL(pp, CAlignOffsetAlloc, vt);
-  void *adr;
-  void *pAligned;
-  size_t newSize;
-  size_t extra;
-  size_t alignSize = (size_t)1 << p->numAlignBits;
-  if (alignSize < sizeof(void *))
- alignSize = sizeof(void *);
-  if (p->offset >= alignSize)
- return NULL;
-  extra = p->offset & (sizeof(void *) - 1);
-  newSize = size + alignSize + extra + ADJUST_ALLOC_SIZE;
-  if (newSize < size)
- return NULL;
-  adr = ISzAlloc_Alloc(p->baseAlloc, newSize);
-  if (!adr)
- return NULL;
-  pAligned = (char *)MY_ALIGN_PTR_DOWN((char *)adr +
-   alignSize - p->offset + extra + ADJUST_ALLOC_SIZE, alignSize) + p->offset;
-  PrintLn();
-  Print("- Aligned: ");
-  Print(" size="); PrintHex(size, 8);
-  Print(" a_size="); PrintHex(newSize, 8);
-  Print(" ptr="); PrintAddr(adr);
-  Print(" a_ptr="); PrintAddr(pAligned);
-  PrintLn();
-  REAL_BLOCK_PTR_VAR(pAligned) = adr;
-  return pAligned;
-}
-static void AlignOffsetAlloc_Free(ISzAllocPtr pp, void *address)
-{
-  if (address)
-  {
- CAlignOffsetAlloc *p = CONTAINER_FROM_VTBL(pp, CAlignOffsetAlloc, vt);
- PrintLn();
- Print("- Aligned Free: ");
- PrintLn();
- ISzAlloc_Free(p->baseAlloc, REAL_BLOCK_PTR_VAR(address));
-  }
-}
-void AlignOffsetAlloc_CreateVTable(CAlignOffsetAlloc *p)
-{
-  p->vt.Alloc = AlignOffsetAlloc_Alloc;
-  p->vt.Free = AlignOffsetAlloc_Free;
-}
 #define kNumTopBits 24
 #define kTopValue ((UInt32)1 << kNumTopBits)
 #define kNumBitModelTotalBits 11
@@ -1820,12 +1694,6 @@ void LzmaEncProps_Normalize(CLzmaEncProps *p)
   if (p->numThreads < 0)
  p->numThreads = 1;
 }
-UInt32 LzmaEncProps_GetDictSize(const CLzmaEncProps *props2)
-{
-  CLzmaEncProps props = *props2;
-  LzmaEncProps_Normalize(&props);
-  return props.dictSize;
-}
 #if (_MSC_VER >= 1400)
 #endif
 #ifdef LZMA_LOG_BSR
@@ -2006,44 +1874,6 @@ typedef struct
   CSaveState saveState;
 } CLzmaEnc;
 #define COPY_ARR(dest,src,arr) memcpy(dest->arr, src->arr, sizeof(src->arr));
-void LzmaEnc_SaveState(CLzmaEncHandle pp)
-{
-  CLzmaEnc *p = (CLzmaEnc *)pp;
-  CSaveState *dest = &p->saveState;
-  dest->state = p->state;
-  dest->lenProbs = p->lenProbs;
-  dest->repLenProbs = p->repLenProbs;
-  COPY_ARR(dest, p, reps);
-  COPY_ARR(dest, p, posAlignEncoder);
-  COPY_ARR(dest, p, isRep);
-  COPY_ARR(dest, p, isRepG0);
-  COPY_ARR(dest, p, isRepG1);
-  COPY_ARR(dest, p, isRepG2);
-  COPY_ARR(dest, p, isMatch);
-  COPY_ARR(dest, p, isRep0Long);
-  COPY_ARR(dest, p, posSlotEncoder);
-  COPY_ARR(dest, p, posEncoders);
-  memcpy(dest->litProbs, p->litProbs, ((UInt32)0x300 << p->lclp) * sizeof(CLzmaProb));
-}
-void LzmaEnc_RestoreState(CLzmaEncHandle pp)
-{
-  CLzmaEnc *dest = (CLzmaEnc *)pp;
-  const CSaveState *p = &dest->saveState;
-  dest->state = p->state;
-  dest->lenProbs = p->lenProbs;
-  dest->repLenProbs = p->repLenProbs;
-  COPY_ARR(dest, p, reps);
-  COPY_ARR(dest, p, posAlignEncoder);
-  COPY_ARR(dest, p, isRep);
-  COPY_ARR(dest, p, isRepG0);
-  COPY_ARR(dest, p, isRepG1);
-  COPY_ARR(dest, p, isRepG2);
-  COPY_ARR(dest, p, isMatch);
-  COPY_ARR(dest, p, isRep0Long);
-  COPY_ARR(dest, p, posSlotEncoder);
-  COPY_ARR(dest, p, posEncoders);
-  memcpy(dest->litProbs, p->litProbs, ((UInt32)0x300 << dest->lclp) * sizeof(CLzmaProb));
-}
 SRes LzmaEnc_SetProps(CLzmaEncHandle pp, const CLzmaEncProps *props2)
 {
   CLzmaEnc *p = (CLzmaEnc *)pp;
@@ -3825,24 +3655,6 @@ static SRes LzmaEnc_AllocAndInit(CLzmaEnc *p, UInt32 keepWindowSize, ISzAllocPtr
   p->nowPos64 = 0;
   return SZ_OK;
 }
-static SRes LzmaEnc_Prepare(CLzmaEncHandle pp, ISeqOutStream *outStream, ISeqInStream *inStream,
- ISzAllocPtr alloc, ISzAllocPtr allocBig)
-{
-  CLzmaEnc *p = (CLzmaEnc *)pp;
-  p->matchFinderBase.stream = inStream;
-  p->needInit = 1;
-  p->rc.outStream = outStream;
-  return LzmaEnc_AllocAndInit(p, 0, alloc, allocBig);
-}
-SRes LzmaEnc_PrepareForLzma2(CLzmaEncHandle pp,
- ISeqInStream *inStream, UInt32 keepWindowSize,
- ISzAllocPtr alloc, ISzAllocPtr allocBig)
-{
-  CLzmaEnc *p = (CLzmaEnc *)pp;
-  p->matchFinderBase.stream = inStream;
-  p->needInit = 1;
-  return LzmaEnc_AllocAndInit(p, keepWindowSize, alloc, allocBig);
-}
 static void LzmaEnc_SetInputBuf(CLzmaEnc *p, const Byte *src, SizeT srcLen)
 {
   p->matchFinderBase.directInput = 1;
@@ -3882,45 +3694,6 @@ static size_t SeqOutStreamBuf_Write(const ISeqOutStream *pp, const void *data, s
   p->data += size;
   return size;
 }
-UInt32 LzmaEnc_GetNumAvailableBytes(CLzmaEncHandle pp)
-{
-  const CLzmaEnc *p = (CLzmaEnc *)pp;
-  return p->matchFinder.GetNumAvailableBytes(p->matchFinderObj);
-}
-const Byte *LzmaEnc_GetCurBuf(CLzmaEncHandle pp)
-{
-  const CLzmaEnc *p = (CLzmaEnc *)pp;
-  return p->matchFinder.GetPointerToCurrentPos(p->matchFinderObj) - p->additionalOffset;
-}
-SRes LzmaEnc_CodeOneMemBlock(CLzmaEncHandle pp, BoolInt reInit,
- Byte *dest, size_t *destLen, UInt32 desiredPackSize, UInt32 *unpackSize)
-{
-  CLzmaEnc *p = (CLzmaEnc *)pp;
-  UInt64 nowPos64;
-  SRes res;
-  CLzmaEnc_SeqOutStreamBuf outStream;
-  outStream.vt.Write = SeqOutStreamBuf_Write;
-  outStream.data = dest;
-  outStream.rem = *destLen;
-  outStream.overflow = False;
-  p->writeEndMark = False;
-  p->finished = False;
-  p->result = SZ_OK;
-  if (reInit)
- LzmaEnc_Init(p);
-  LzmaEnc_InitPrices(p);
-  nowPos64 = p->nowPos64;
-  RangeEnc_Init(&p->rc);
-  p->rc.outStream = &outStream.vt;
-  if (desiredPackSize == 0)
- return SZ_ERROR_OUTPUT_EOF;
-  res = LzmaEnc_CodeOneBlock(p, desiredPackSize, *unpackSize);
-  *unpackSize = (UInt32)(p->nowPos64 - nowPos64);
-  *destLen -= outStream.rem;
-  if (outStream.overflow)
- return SZ_ERROR_OUTPUT_EOF;
-  return res;
-}
 static SRes LzmaEnc_Encode2(CLzmaEnc *p, ICompressProgress *progress)
 {
   SRes res = SZ_OK;
@@ -3941,12 +3714,6 @@ static SRes LzmaEnc_Encode2(CLzmaEnc *p, ICompressProgress *progress)
   }
   LzmaEnc_Finish(p);
   return res;
-}
-SRes LzmaEnc_Encode(CLzmaEncHandle pp, ISeqOutStream *outStream, ISeqInStream *inStream, ICompressProgress *progress,
- ISzAllocPtr alloc, ISzAllocPtr allocBig)
-{
-  RINOK(LzmaEnc_Prepare(pp, outStream, inStream, alloc, allocBig));
-  return LzmaEnc_Encode2((CLzmaEnc *)pp, progress);
 }
 SRes LzmaEnc_WriteProperties(CLzmaEncHandle pp, Byte *props, SizeT *size)
 {
@@ -3971,10 +3738,6 @@ SRes LzmaEnc_WriteProperties(CLzmaEncHandle pp, Byte *props, SizeT *size)
   for (i = 0; i < 4; i++)
  props[1 + i] = (Byte)(dictSize >> (8 * i));
   return SZ_OK;
-}
-unsigned LzmaEnc_IsWriteEndMark(CLzmaEncHandle pp)
-{
-  return ((CLzmaEnc *)pp)->writeEndMark;
 }
 SRes LzmaEnc_MemEncode(CLzmaEncHandle pp, Byte *dest, SizeT *destLen, const Byte *src, SizeT srcLen,
  int writeEndMark, ICompressProgress *progress, ISzAllocPtr alloc, ISzAllocPtr allocBig)
@@ -4144,13 +3907,6 @@ int MatchFinder_NeedMove(CMatchFinder *p)
   if (p->directInput)
  return 0;
   return ((size_t)(p->bufferBase + p->blockSize - p->buffer) <= p->keepSizeAfter);
-}
-void MatchFinder_ReadIfRequired(CMatchFinder *p)
-{
-  if (p->streamEndWasReached)
- return;
-  if (p->keepSizeAfter >= p->streamPos - p->pos)
- MatchFinder_ReadBlock(p);
 }
 static void MatchFinder_CheckAndMoveAndRead(CMatchFinder *p)
 {
@@ -4554,16 +4310,6 @@ static UInt32 Bt2_MatchFinder_GetMatches(CMatchFinder *p, UInt32 *distances)
   offset = 0;
   GET_MATCHES_FOOTER(offset, 1)
 }
-UInt32 Bt3Zip_MatchFinder_GetMatches(CMatchFinder *p, UInt32 *distances)
-{
-  unsigned offset;
-  GET_MATCHES_HEADER(3)
-  HASH_ZIP_CALC;
-  curMatch = p->hash[hv];
-  p->hash[hv] = p->pos;
-  offset = 0;
-  GET_MATCHES_FOOTER(offset, 2)
-}
 static UInt32 Bt3_MatchFinder_GetMatches(CMatchFinder *p, UInt32 *distances)
 {
   UInt32 h2, d2, pos;
@@ -4685,35 +4431,12 @@ static UInt32 Hc4_MatchFinder_GetMatches(CMatchFinder *p, UInt32 *distances)
    distances + offset, maxLen) - (distances));
   MOVE_POS_RET
 }
-UInt32 Hc3Zip_MatchFinder_GetMatches(CMatchFinder *p, UInt32 *distances)
-{
-  unsigned offset;
-  GET_MATCHES_HEADER(3)
-  HASH_ZIP_CALC;
-  curMatch = p->hash[hv];
-  p->hash[hv] = p->pos;
-  offset = (unsigned)(Hc_GetMatchesSpec(lenLimit, curMatch, MF_PARAMS(p),
-   distances, 2) - (distances));
-  MOVE_POS_RET
-}
 static void Bt2_MatchFinder_Skip(CMatchFinder *p, UInt32 num)
 {
   do
   {
  SKIP_HEADER(2)
  HASH2_CALC;
- curMatch = p->hash[hv];
- p->hash[hv] = p->pos;
- SKIP_FOOTER
-  }
-  while (--num != 0);
-}
-void Bt3Zip_MatchFinder_Skip(CMatchFinder *p, UInt32 num)
-{
-  do
-  {
- SKIP_HEADER(3)
- HASH_ZIP_CALC;
  curMatch = p->hash[hv];
  p->hash[hv] = p->pos;
  SKIP_FOOTER
@@ -4766,19 +4489,6 @@ static void Hc4_MatchFinder_Skip(CMatchFinder *p, UInt32 num)
  hash [h2] =
  (hash + kFix3HashSize)[h3] =
  (hash + kFix4HashSize)[hv] = p->pos;
- p->son[p->cyclicBufferPos] = curMatch;
- MOVE_POS
-  }
-  while (--num != 0);
-}
-void Hc3Zip_MatchFinder_Skip(CMatchFinder *p, UInt32 num)
-{
-  do
-  {
- SKIP_HEADER(3)
- HASH_ZIP_CALC;
- curMatch = p->hash[hv];
- p->hash[hv] = p->pos;
  p->son[p->cyclicBufferPos] = curMatch;
  MOVE_POS
   }
@@ -5109,81 +4819,6 @@ namespace plz
   plz::MemoryStream mem {(uint8_t *)data, size};
   mem.read((char *)&output[0], size);
  }
- std::vector<uint8_t> File::FromFile(const std::string &path)
- {
-  std::fstream file;
-  file = std::fstream(path, std::ios::in | std::ios::binary);
-  file.seekg(0, std::ios::end);
-  size_t fileSize = file.tellg();
-  file.seekg(0, std::ios::beg);
-  std::vector<uint8_t> bytes(fileSize);
-  file.read((char *)&bytes[0], fileSize);
-  file.close();
-  return bytes;
- }
- FileStatus File::FromFile(const std::string &path, std::vector<uint8_t> &output)
- {
-  std::fstream file;
-  try
-  {
-   file = std::fstream(path, std::ios::in | std::ios::binary);
-   file.exceptions(std::fstream::failbit | std::fstream::badbit);
-   bool isBad = file.bad();
-   bool isFail = file.fail();
-   bool isOpen = file.is_open();
-   if(isBad || isFail || !isOpen)
-    file.close();
-   if(isBad)
-    return FileStatus(FileStatus::Code::FileWriteErrorBadBit, 0, "", "", "");
-   else if(isFail)
-    return FileStatus(FileStatus::Code::FileWriteErrorFailBit, 0, "", "", "");
-   else if(!isOpen)
-    return FileStatus(FileStatus::Code::FileWriteError, 0, "", "", "");
-   file.seekg(0, std::ios::end);
-   size_t fileSize = file.tellg();
-   file.seekg(0, std::ios::beg);
-   output.resize(fileSize);
-   file.read((char *) &output[0], fileSize);
-   file.close();
-   return FileStatus();
-  }
-  catch (const std::fstream::failure &e)
-  {
-   if(file.is_open())
-    file.close();
-   return FileStatus(FileStatus::Code::FileReadError, e.code().value(), e.what(), e.code().category().name(), e.code().message());
-  }
- }
- FileStatus File::ToFile(const std::string &path, const std::vector<uint8_t> &data)
- {
-  std::fstream file;
-  file.exceptions(std::fstream::failbit | std::fstream::badbit);
-  try
-  {
-   file = std::fstream(path, std::ios::out | std::ios::binary);
-   bool isBad = file.bad();
-   bool isFail = file.fail();
-   bool isOpen = file.is_open();
-   if(isBad || isFail || !isOpen)
-    file.close();
-   if(isBad)
-    return FileStatus(FileStatus::Code::FileWriteErrorBadBit, 0, "", "", "");
-   else if(isFail)
-    return FileStatus(FileStatus::Code::FileWriteErrorFailBit, 0, "", "", "");
-   else if(!isOpen)
-    return FileStatus(FileStatus::Code::FileWriteError, 0, "", "", "");
-   for (const auto &b : data)
-    file << b;
-   file.close();
-   return FileStatus();
-  }
-  catch (const std::fstream::failure &e)
-  {
-   if(file.is_open())
-    file.close();
-   return FileStatus(FileStatus::Code::FileWriteError, e.code().value(), e.what(), e.code().category().name(), e.code().message());
-  }
- }
 }
 #endif
 #ifndef POCKETLZMA_POCKETLZMA_CLASS_HPP
@@ -5210,10 +4845,6 @@ namespace plz
  PocketLzma::PocketLzma(Preset preset)
  {
   usePreset(preset);
- }
- void PocketLzma::setSettings(const Settings &settings)
- {
-  m_settings = settings;
  }
  void PocketLzma::usePreset(Preset preset)
  {
