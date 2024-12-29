@@ -27,6 +27,9 @@ target_link_libraries(solution_tiny_lzma PRIVATE ton_crypto_lib)
 add_executable(solution_evolve solution_evolve.cpp)
 target_link_libraries(solution_evolve PRIVATE ton_crypto_lib)
 
+add_executable(solution_evolve_tiny_lzma solution_evolve_tiny_lzma.cpp)
+target_link_libraries(solution_evolve_tiny_lzma PRIVATE ton_crypto_lib)
+
 # 01 - Cells.cpp
 add_executable(Cells "01 - Cells.cpp")
 target_link_libraries(Cells PRIVATE ton_crypto_lib)
