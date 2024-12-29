@@ -1198,21 +1198,19 @@ int tinyLzmaDecompress(const uint8_t *p_src, size_t src_len, uint8_t *p_dst,
 #include <iostream>
 td::BufferSlice lzma_compress(td::Slice data) {
   const std::size_t src_len = data.size();
-  auto dst_len = src_len + (src_len >> 2) + 4096;
-  if (dst_len < src_len)
-    dst_len = (~((size_t)0));
-  auto output = std::vector<uint8_t>(dst_len);
-  tinyLzmaCompress(data.ubegin(), src_len, output.data(), &dst_len);
-  return td::BufferSlice{reinterpret_cast<const char *>(output.data()),
-                         dst_len};
+  auto dst_len = std::min(src_len + (src_len >> 2) + 4096, 2UL << 20);
+  auto output = td::BufferSlice(dst_len);
+  tinyLzmaCompress(data.ubegin(), src_len, reinterpret_cast<uint8_t *>(output.data()), &dst_len);
+  output.truncate(dst_len);
+  return output;
 }
 td::Result<td::BufferSlice> lzma_decompress(td::Slice data,
                                             int max_decompressed_size) {
   std::size_t dst_len = max_decompressed_size;
-  auto output = std::vector<uint8_t>(dst_len);
-  tinyLzmaDecompress(data.ubegin(), data.size(), output.data(), &dst_len);
-  return td::BufferSlice{reinterpret_cast<const char *>(output.data()),
-                         dst_len};
+  auto output = td::BufferSlice(dst_len);
+  tinyLzmaDecompress(data.ubegin(), data.size(),  reinterpret_cast<uint8_t *>(output.data()), &dst_len);
+  output.truncate(dst_len);
+  return output;
 }
 enum class CompressionaAlgorithm {
   LZMA,
