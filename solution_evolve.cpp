@@ -782,7 +782,14 @@ Gene merge(const Gene &a, const Gene &b) {
 }
 
 td::BufferSlice compress(td::Slice data) {
-  auto start_time_ms = clock() * 1000 / CLOCKS_PER_SEC;
+  const auto start_time = std::chrono::steady_clock::now();
+
+  const auto is_timeout = [&start_time]() {
+    constexpr auto MAX_DURATION = std::chrono::milliseconds(1900);
+
+    auto now = std::chrono::steady_clock::now();
+    return (now - start_time) >= MAX_DURATION;
+  };
 
   td::Ref<vm::Cell> root = vm::std_boc_deserialize(data).move_as_ok();
 
@@ -799,6 +806,9 @@ td::BufferSlice compress(td::Slice data) {
     return Gene(mask, 1e9);
   };
   auto evalGene = [&](Gene &gene) {
+    if (is_timeout()) {
+      return;
+    }
     auto ser = my_std_boc_serialize(gene.mask, root, 2).move_as_ok();
     auto compressed = td::lz4_compress(ser);
     gene.unfitness = compressed.length();
@@ -812,6 +822,10 @@ td::BufferSlice compress(td::Slice data) {
   for (int i = 0; i < POPULATION; i++) {
     population.push_back(generateGene());
     evalGene(population.back());
+
+    if (is_timeout()) {
+      return best;
+    }
   }
   std::sort(population.begin(), population.end());
 
@@ -820,12 +834,18 @@ td::BufferSlice compress(td::Slice data) {
 
     std::vector<Gene> childs, new_population;
     for (int i = 0; i < CHILDREN; i++) {
+      if (is_timeout()) {
+        break;
+      }
       int par1 = rng() % population.size();
       int par2 = rng() % population.size();
       auto child = merge(population[par1], population[par2]);
       child.mutate(rng() % MUTATION);
       evalGene(child);
       childs.push_back(child);
+    }
+    if (is_timeout()) {
+      break;
     }
 
     std::sort(childs.begin(), childs.end());
@@ -851,12 +871,9 @@ td::BufferSlice compress(td::Slice data) {
 
     population = std::move(new_population);
 
-    auto elapsed_time_ms = clock() * 1000 / CLOCKS_PER_SEC - start_time_ms;
-    // std::cerr << elapsed_time_ms << ", " << attempts << ", "
-    // << population[0].unfitness << "\n";
-
-    if (elapsed_time_ms > 1900)
+    if (is_timeout()) {
       break;
+    }
   }
 
   // std::cerr << "best len: " << best.length() << "\n";
