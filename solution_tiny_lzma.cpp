@@ -2,19 +2,16 @@
 #include <stdint.h>
 int tinyLzmaCompress(const uint8_t *p_src, size_t src_len, uint8_t *p_dst,
                      size_t *p_dst_len);
-int tinyLzmaCompressToZipContainer(const uint8_t *p_src, size_t src_len,
-                                   uint8_t *p_dst, size_t *p_dst_len,
-                                   const char *file_name_in_zip);
 #define R_OK 0
 #define R_ERR_MEMORY_RUNOUT 1
 #define R_ERR_UNSUPPORTED 2
 #define R_ERR_OUTPUT_OVERFLOW 3
 #include <stdlib.h>
-#define RET_IF_ERROR(expression) \
-  { \
-    int res = (expression); \
-    if (res != R_OK) \
-      return res; \
+#define RET_IF_ERROR(expression)                                               \
+  {                                                                            \
+    int res = (expression);                                                    \
+    if (res != R_OK)                                                           \
+      return res;                                                              \
   }
 static uint32_t bitsReverse(uint32_t bits, uint32_t bit_count) {
   uint32_t revbits = 0;
@@ -73,8 +70,7 @@ static void rangeEncodeNormalize(RangeEncoder_t *e) {
         rangeEncodeOutByte(e, 0x00);
       e->cache = (uint8_t)((e->low_lsb) >> 24);
       e->cache_size = 0;
-    } else if (e->low_lsb <
-               0xFF000000) {
+    } else if (e->low_lsb < 0xFF000000) {
       rangeEncodeOutByte(e, e->cache);
       for (; e->cache_size > 1; e->cache_size--)
         rangeEncodeOutByte(e, 0xFF);
@@ -121,8 +117,7 @@ static void rangeEncodeBit(RangeEncoder_t *e, uint16_t *p_prob, uint8_t bit) {
                                  RANGE_CODE_MOVE_BITS));
   } else {
     e->range -= bound;
-    if ((e->low_lsb + bound) <
-        e->low_lsb)
+    if ((e->low_lsb + bound) < e->low_lsb)
       e->low_msb = 1;
     e->low_lsb += bound;
     *p_prob = (uint16_t)(prob - (prob >> RANGE_CODE_MOVE_BITS));
@@ -162,14 +157,13 @@ static void rangeEncodeMB(RangeEncoder_t *e, uint16_t *p_prob, uint32_t byte,
 #define HASH_N 21
 #define HASH_SIZE (1 << HASH_N)
 #define HASH_MASK ((1 << HASH_N) - 1)
-#define INVALID_HASH_ITEM \
-  (~((size_t)0))
-#define INIT_HASH_TABLE(hash_table) \
-  { \
-    uint32_t i, j; \
-    for (i = 0; i < HASH_SIZE; i++) \
-      for (j = 0; j < HASH_LEVEL; j++) \
-        hash_table[i][j] = INVALID_HASH_ITEM; \
+#define INVALID_HASH_ITEM (~((size_t)0))
+#define INIT_HASH_TABLE(hash_table)                                            \
+  {                                                                            \
+    uint32_t i, j;                                                             \
+    for (i = 0; i < HASH_SIZE; i++)                                            \
+      for (j = 0; j < HASH_LEVEL; j++)                                         \
+        hash_table[i][j] = INVALID_HASH_ITEM;                                  \
   }
 static uint32_t getHash(const uint8_t *p_src, size_t src_len, size_t pos) {
   if (pos >= src_len || pos + 1 == src_len || pos + 2 == src_len)
@@ -190,8 +184,7 @@ static void updateHashTable(const uint8_t *p_src, size_t src_len, size_t pos,
   if (pos >= src_len)
     return;
   for (i = 0; i < HASH_LEVEL; i++) {
-    if (hash_table[hash][i] ==
-        INVALID_HASH_ITEM) {
+    if (hash_table[hash][i] == INVALID_HASH_ITEM) {
       hash_table[hash][i] = pos;
       return;
     }
@@ -204,9 +197,9 @@ static void updateHashTable(const uint8_t *p_src, size_t src_len, size_t pos,
 }
 static uint32_t lenDistScore(uint32_t len, uint32_t dist, uint32_t rep0,
                              uint32_t rep1, uint32_t rep2, uint32_t rep3) {
-#define D 12
   static const uint32_t TABLE_THRESHOLDS[] = {
-      D * D * D * D * D * 5, D * D * D * D * 4, D * D * D * 3, D * D * 2, D};
+      12 * 12 * 12 * 12 * 12 * 5, 12 * 12 * 12 * 12 * 4, 12 * 12 * 12 * 3,
+      12 * 12 * 2, 12};
   uint32_t score;
   if (dist == rep0 || dist == rep1 || dist == rep2 || dist == rep3) {
     score = 5;
@@ -312,63 +305,63 @@ typedef enum {
 static uint8_t stateTransition(uint8_t state, PACKET_t type) {
   switch (state) {
   case 0:
-    return (type == PKT_LIT) ? 0
-           : (type == PKT_MATCH) ? 7
+    return (type == PKT_LIT)        ? 0
+           : (type == PKT_MATCH)    ? 7
            : (type == PKT_SHORTREP) ? 9
                                     : 8;
   case 1:
-    return (type == PKT_LIT) ? 0
-           : (type == PKT_MATCH) ? 7
+    return (type == PKT_LIT)        ? 0
+           : (type == PKT_MATCH)    ? 7
            : (type == PKT_SHORTREP) ? 9
                                     : 8;
   case 2:
-    return (type == PKT_LIT) ? 0
-           : (type == PKT_MATCH) ? 7
+    return (type == PKT_LIT)        ? 0
+           : (type == PKT_MATCH)    ? 7
            : (type == PKT_SHORTREP) ? 9
                                     : 8;
   case 3:
-    return (type == PKT_LIT) ? 0
-           : (type == PKT_MATCH) ? 7
+    return (type == PKT_LIT)        ? 0
+           : (type == PKT_MATCH)    ? 7
            : (type == PKT_SHORTREP) ? 9
                                     : 8;
   case 4:
-    return (type == PKT_LIT) ? 1
-           : (type == PKT_MATCH) ? 7
+    return (type == PKT_LIT)        ? 1
+           : (type == PKT_MATCH)    ? 7
            : (type == PKT_SHORTREP) ? 9
                                     : 8;
   case 5:
-    return (type == PKT_LIT) ? 2
-           : (type == PKT_MATCH) ? 7
+    return (type == PKT_LIT)        ? 2
+           : (type == PKT_MATCH)    ? 7
            : (type == PKT_SHORTREP) ? 9
                                     : 8;
   case 6:
-    return (type == PKT_LIT) ? 3
-           : (type == PKT_MATCH) ? 7
+    return (type == PKT_LIT)        ? 3
+           : (type == PKT_MATCH)    ? 7
            : (type == PKT_SHORTREP) ? 9
                                     : 8;
   case 7:
-    return (type == PKT_LIT) ? 4
-           : (type == PKT_MATCH) ? 10
+    return (type == PKT_LIT)        ? 4
+           : (type == PKT_MATCH)    ? 10
            : (type == PKT_SHORTREP) ? 11
                                     : 11;
   case 8:
-    return (type == PKT_LIT) ? 5
-           : (type == PKT_MATCH) ? 10
+    return (type == PKT_LIT)        ? 5
+           : (type == PKT_MATCH)    ? 10
            : (type == PKT_SHORTREP) ? 11
                                     : 11;
   case 9:
-    return (type == PKT_LIT) ? 6
-           : (type == PKT_MATCH) ? 10
+    return (type == PKT_LIT)        ? 6
+           : (type == PKT_MATCH)    ? 10
            : (type == PKT_SHORTREP) ? 11
                                     : 11;
   case 10:
-    return (type == PKT_LIT) ? 4
-           : (type == PKT_MATCH) ? 10
+    return (type == PKT_LIT)        ? 4
+           : (type == PKT_MATCH)    ? 10
            : (type == PKT_SHORTREP) ? 11
                                     : 11;
   case 11:
-    return (type == PKT_LIT) ? 5
-           : (type == PKT_MATCH) ? 10
+    return (type == PKT_LIT)        ? 5
+           : (type == PKT_MATCH)    ? 10
            : (type == PKT_SHORTREP) ? 11
                                     : 11;
   default:
@@ -381,19 +374,18 @@ static uint8_t stateTransition(uint8_t state, PACKET_t type) {
 #define N_PREV_BYTE_LC_MSBS (1 << LC)
 #define LC_SHIFT (8 - LC)
 #define LC_MASK ((1 << LC) - 1)
-#define LP 0
-#define N_LIT_POS_STATES (1 << LP)
-#define LP_MASK ((1 << LP) - 1)
+#define N_LIT_POS_STATES (1 << 0)
+#define LP_MASK ((1 << 0) - 1)
 #define PB 3
 #define N_POS_STATES (1 << PB)
 #define PB_MASK ((1 << PB) - 1)
-#define LCLPPB_BYTE ((uint8_t)((PB * 5 + LP) * 9 + LC))
-#define INIT_PROBS(probs) \
-  { \
-    uint16_t *p = (uint16_t *)(probs); \
-    uint16_t *q = p + (sizeof(probs) / sizeof(uint16_t)); \
-    for (; p < q; p++) \
-      *p = RANGE_CODE_HALF_PROBABILITY; \
+#define LCLPPB_BYTE ((uint8_t)((PB * 5 + 0) * 9 + LC))
+#define INIT_PROBS(probs)                                                      \
+  {                                                                            \
+    uint16_t *p = (uint16_t *)(probs);                                         \
+    uint16_t *q = p + (sizeof(probs) / sizeof(uint16_t));                      \
+    for (; p < q; p++)                                                         \
+      *p = RANGE_CODE_HALF_PROBABILITY;                                        \
   }
 static int lzmaEncode(const uint8_t *p_src, size_t src_len, uint8_t *p_dst,
                       size_t *p_dst_len, uint8_t with_end_mark) {
@@ -421,9 +413,8 @@ static int lzmaEncode(const uint8_t *p_src, size_t src_len, uint8_t *p_dst,
   uint16_t probs_len_mid[2][N_POS_STATES][(1 << 3) - 1];
   uint16_t probs_len_high[2][(1 << 8) - 1];
   size_t(*hash_table)[HASH_LEVEL];
-  hash_table = (size_t(*)[HASH_LEVEL])malloc(
-      sizeof(size_t) * HASH_SIZE *
-      HASH_LEVEL);
+  hash_table =
+      (size_t(*)[HASH_LEVEL])malloc(sizeof(size_t) * HASH_SIZE * HASH_LEVEL);
   if (hash_table == 0)
     return R_ERR_MEMORY_RUNOUT;
   INIT_HASH_TABLE(hash_table);
@@ -637,7 +628,7 @@ static int lzmaEncode(const uint8_t *p_src, size_t src_len, uint8_t *p_dst,
   return R_OK;
 }
 #define LZMA_DIC_MIN 4096
-#define LZMA_DIC_LEN \
+#define LZMA_DIC_LEN                                                           \
   ((LZ_DIST_MAX_PLUS1 > LZMA_DIC_MIN) ? LZ_DIST_MAX_PLUS1 : LZMA_DIC_MIN)
 #define LZMA_HEADER_LEN 13
 static int writeLzmaHeader(uint8_t *p_dst, size_t *p_dst_len,
@@ -665,10 +656,8 @@ int tinyLzmaCompress(const uint8_t *p_src, size_t src_len, uint8_t *p_dst,
   size_t hdr_len, cmprs_len;
   hdr_len = *p_dst_len;
   RET_IF_ERROR(writeLzmaHeader(p_dst, &hdr_len, src_len, 1));
-  cmprs_len =
-      *p_dst_len - hdr_len;
-  RET_IF_ERROR(lzmaEncode(p_src, src_len, p_dst + hdr_len, &cmprs_len,
-                          1));
+  cmprs_len = *p_dst_len - hdr_len;
+  RET_IF_ERROR(lzmaEncode(p_src, src_len, p_dst + hdr_len, &cmprs_len, 1));
   *p_dst_len = hdr_len + cmprs_len;
   return R_OK;
 }
@@ -691,14 +680,11 @@ static int writeZipHeader(uint8_t *p_dst, size_t *p_dst_len, uint32_t crc,
   const size_t file_name_len = getStringLength(file_name);
   if (file_name_len > FILE_NAME_IN_ZIP_MAX_LEN)
     return R_ERR_UNSUPPORTED;
-  if (uncompressed_len >
-      ZIP_UNCOMPRESSED_MAX_LEN)
+  if (uncompressed_len > ZIP_UNCOMPRESSED_MAX_LEN)
     return R_ERR_UNSUPPORTED;
-  if (compressed_len >
-      ZIP_COMPRESSED_MAX_LEN)
+  if (compressed_len > ZIP_COMPRESSED_MAX_LEN)
     return R_ERR_UNSUPPORTED;
-  if (*p_dst_len < ZIP_HEADER_LEN_EXCLUDE_FILENAME +
-                       file_name_len)
+  if (*p_dst_len < ZIP_HEADER_LEN_EXCLUDE_FILENAME + file_name_len)
     return R_ERR_OUTPUT_OVERFLOW;
   *p_dst_len = ZIP_HEADER_LEN_EXCLUDE_FILENAME + file_name_len;
   *(p_dst++) = 0x50;
@@ -736,8 +722,7 @@ static int writeZipHeader(uint8_t *p_dst, size_t *p_dst_len, uint32_t crc,
   return R_OK;
 }
 static int writeZipLzmaProperty(uint8_t *p_dst, size_t *p_dst_len) {
-  if (*p_dst_len <
-      ZIP_LZMA_PROPERTY_LEN)
+  if (*p_dst_len < ZIP_LZMA_PROPERTY_LEN)
     return R_ERR_OUTPUT_OVERFLOW;
   *p_dst_len = ZIP_LZMA_PROPERTY_LEN;
   *(p_dst++) = 0x10;
@@ -756,8 +741,7 @@ static int writeZipFooter(uint8_t *p_dst, size_t *p_dst_len, uint32_t crc,
                           const char *file_name, size_t offset) {
   size_t i;
   const size_t file_name_len = getStringLength(file_name);
-  if (*p_dst_len < ZIP_FOOTER_LEN_EXCLUDE_FILENAME +
-                       file_name_len)
+  if (*p_dst_len < ZIP_FOOTER_LEN_EXCLUDE_FILENAME + file_name_len)
     return R_ERR_OUTPUT_OVERFLOW;
   *p_dst_len = ZIP_FOOTER_LEN_EXCLUDE_FILENAME + file_name_len;
   *(p_dst++) = 0x50;
@@ -820,13 +804,11 @@ static int writeZipFooter(uint8_t *p_dst, size_t *p_dst_len, uint32_t crc,
   *(p_dst++) = 0x00;
   *(p_dst++) = 0x01;
   *(p_dst++) = 0x00;
-  *(p_dst++) = (uint8_t)((46 + file_name_len) >>
-                         0);
+  *(p_dst++) = (uint8_t)((46 + file_name_len) >> 0);
   *(p_dst++) = (uint8_t)((46 + file_name_len) >> 8);
   *(p_dst++) = (uint8_t)((46 + file_name_len) >> 16);
   *(p_dst++) = (uint8_t)((46 + file_name_len) >> 24);
-  *(p_dst++) =
-      (uint8_t)(offset >> 0);
+  *(p_dst++) = (uint8_t)(offset >> 0);
   *(p_dst++) = (uint8_t)(offset >> 8);
   *(p_dst++) = (uint8_t)(offset >> 16);
   *(p_dst++) = (uint8_t)(offset >> 24);
@@ -848,39 +830,6 @@ static uint32_t calcCrc32(const uint8_t *p_src, size_t src_len) {
   }
   return ~crc;
 }
-int tinyLzmaCompressToZipContainer(const uint8_t *p_src, size_t src_len,
-                                   uint8_t *p_dst, size_t *p_dst_len,
-                                   const char *file_name_in_zip) {
-  size_t zip_hdr_len, lzma_prop_len, cmprs_len,
-      zip_ftr_len;
-  uint32_t crc;
-  zip_hdr_len = *p_dst_len;
-  RET_IF_ERROR(writeZipHeader(
-      p_dst, &zip_hdr_len, 0, 0, src_len,
-      file_name_in_zip));
-  lzma_prop_len =
-      *p_dst_len - zip_hdr_len;
-  RET_IF_ERROR(writeZipLzmaProperty(p_dst + zip_hdr_len, &lzma_prop_len));
-  cmprs_len = *p_dst_len - zip_hdr_len -
-              lzma_prop_len;
-  RET_IF_ERROR(lzmaEncode(p_src, src_len, p_dst + zip_hdr_len + lzma_prop_len,
-                          &cmprs_len, 1));
-  if (cmprs_len > ZIP_COMPRESSED_MAX_LEN)
-    return R_ERR_UNSUPPORTED;
-  cmprs_len += lzma_prop_len;
-  crc = calcCrc32(p_src, src_len);
-  zip_ftr_len = *p_dst_len - zip_hdr_len -
-                cmprs_len;
-  RET_IF_ERROR(writeZipFooter(p_dst + zip_hdr_len + cmprs_len, &zip_ftr_len,
-                              crc, cmprs_len, src_len, file_name_in_zip,
-                              zip_hdr_len + cmprs_len));
-  RET_IF_ERROR(
-      writeZipHeader(p_dst, &zip_hdr_len, crc, cmprs_len, src_len,
-                     file_name_in_zip));
-  *p_dst_len = zip_hdr_len + cmprs_len +
-               zip_ftr_len;
-  return R_OK;
-}
 #include <stddef.h>
 #include <stdint.h>
 int tinyLzmaDecompress(const uint8_t *p_src, size_t src_len, uint8_t *p_dst,
@@ -893,11 +842,11 @@ int tinyLzmaDecompress(const uint8_t *p_src, size_t src_len, uint8_t *p_dst,
 #define R_ERR_DATA 5
 #define R_ERR_OUTPUT_LEN_MISMATCH 6
 #include <stdlib.h>
-#define RET_IF_ERROR(expression) \
-  { \
-    int res = (expression); \
-    if (res != R_OK) \
-      return res; \
+#define RET_IF_ERROR(expression)                                               \
+  {                                                                            \
+    int res = (expression);                                                    \
+    if (res != R_OK)                                                           \
+      return res;                                                              \
   }
 #define RANGE_CODE_NORMALIZE_THRESHOLD (1 << 24)
 #define RANGE_CODE_MOVE_BITS 5
@@ -986,8 +935,7 @@ static uint32_t rangeDecodeInt(RangeDecoder_t *d, uint16_t *p_prob,
 }
 static uint32_t rangeDecodeMB(RangeDecoder_t *d, uint16_t *p_prob,
                               uint32_t match_byte) {
-  uint32_t i, val = 1, off0 = 0x100,
-              off1;
+  uint32_t i, val = 1, off0 = 0x100, off1;
   for (i = 0; i < 8; i++) {
     match_byte <<= 1;
     off1 = off0;
@@ -1010,19 +958,19 @@ static uint32_t rangeDecodeMB(RangeDecoder_t *d, uint16_t *p_prob,
 #define N_LIT_POS_STATES (1 << MAX_LP)
 #define MAX_PB 4
 #define N_POS_STATES (1 << MAX_PB)
-#define INIT_PROBS(probs) \
-  { \
-    uint16_t *p = (uint16_t *)(probs); \
-    uint16_t *q = p + (sizeof(probs) / sizeof(uint16_t)); \
-    for (; p < q; p++) \
-      *p = RANGE_CODE_HALF_PROBABILITY; \
+#define INIT_PROBS(probs)                                                      \
+  {                                                                            \
+    uint16_t *p = (uint16_t *)(probs);                                         \
+    uint16_t *q = p + (sizeof(probs) / sizeof(uint16_t));                      \
+    for (; p < q; p++)                                                         \
+      *p = RANGE_CODE_HALF_PROBABILITY;                                        \
   }
-#define INIT_PROBS_LITERAL(probs) \
-  { \
-    uint16_t *p = (uint16_t *)(probs); \
+#define INIT_PROBS_LITERAL(probs)                                              \
+  {                                                                            \
+    uint16_t *p = (uint16_t *)(probs);                                         \
     uint16_t *q = p + (N_LIT_POS_STATES * N_PREV_BYTE_LC_MSBS * 3 * (1 << 8)); \
-    for (; p < q; p++) \
-      *p = RANGE_CODE_HALF_PROBABILITY; \
+    for (; p < q; p++)                                                         \
+      *p = RANGE_CODE_HALF_PROBABILITY;                                        \
   }
 static int lzmaDecode(const uint8_t *p_src, size_t src_len, uint8_t *p_dst,
                       size_t *p_dst_len, uint8_t lc, uint8_t lp, uint8_t pb) {
@@ -1053,9 +1001,8 @@ static int lzmaDecode(const uint8_t *p_src, size_t src_len, uint8_t *p_dst,
   uint16_t probs_len_mid[2][N_POS_STATES][(1 << 3) - 1];
   uint16_t probs_len_high[2][(1 << 8) - 1];
   uint16_t(*probs_literal)[N_PREV_BYTE_LC_MSBS][3 * (1 << 8)];
-  probs_literal = (uint16_t(*)[N_PREV_BYTE_LC_MSBS][3 * (1 << 8)])
-      malloc(sizeof(uint16_t) * N_PREV_BYTE_LC_MSBS * N_LIT_POS_STATES * 3 *
-             (1 << 8));
+  probs_literal = (uint16_t(*)[N_PREV_BYTE_LC_MSBS][3 * (1 << 8)]) malloc(
+      sizeof(uint16_t) * N_PREV_BYTE_LC_MSBS * N_LIT_POS_STATES * 3 * (1 << 8));
   if (probs_literal == 0)
     return R_ERR_MEMORY_RUNOUT;
   INIT_PROBS(probs_is_match);
@@ -1081,21 +1028,15 @@ static int lzmaDecode(const uint8_t *p_src, size_t src_len, uint8_t *p_dst,
     PACKET_t type;
     if (coder.overflow)
       return R_ERR_INPUT_OVERFLOW;
-    if (!rangeDecodeBit(
-            &coder,
-            &probs_is_match[state][pos_state])) {
+    if (!rangeDecodeBit(&coder, &probs_is_match[state][pos_state])) {
       type = PKT_LIT;
-    } else if (!rangeDecodeBit(&coder,
-                               &probs_is_rep[state])) {
+    } else if (!rangeDecodeBit(&coder, &probs_is_rep[state])) {
       type = PKT_MATCH;
-    } else if (!rangeDecodeBit(
-                   &coder,
-                   &probs_is_rep0[state])) {
+    } else if (!rangeDecodeBit(&coder, &probs_is_rep0[state])) {
       type = rangeDecodeBit(&coder, &probs_is_rep0_long[state][pos_state])
                  ? PKT_REP0
                  : PKT_SHORTREP;
-    } else if (!rangeDecodeBit(
-                   &coder, &probs_is_rep1[state])) {
+    } else if (!rangeDecodeBit(&coder, &probs_is_rep1[state])) {
       type = PKT_REP1;
     } else {
       type =
@@ -1151,20 +1092,16 @@ static int lzmaDecode(const uint8_t *p_src, size_t src_len, uint8_t *p_dst,
     if (len == 0) {
       const uint32_t is_rep = (type != PKT_MATCH);
       if (!rangeDecodeBit(&coder, &probs_len_choice[is_rep]))
-        len = 2 + rangeDecodeInt(&coder, probs_len_low[is_rep][pos_state],
-                                 3);
+        len = 2 + rangeDecodeInt(&coder, probs_len_low[is_rep][pos_state], 3);
       else if (!rangeDecodeBit(&coder, &probs_len_choice2[is_rep]))
-        len = 10 + rangeDecodeInt(&coder, probs_len_mid[is_rep][pos_state],
-                                  3);
+        len = 10 + rangeDecodeInt(&coder, probs_len_mid[is_rep][pos_state], 3);
       else
-        len = 18 +
-              rangeDecodeInt(&coder, probs_len_high[is_rep], 8);
+        len = 18 + rangeDecodeInt(&coder, probs_len_high[is_rep], 8);
     }
     if (type == PKT_MATCH) {
       const uint32_t len_min5_minus2 = (len > 5) ? 3 : (len - 2);
       uint32_t dist_slot, bcnt;
-      dist_slot = rangeDecodeInt(&coder, probs_dist_slot[len_min5_minus2],
-                                 6);
+      dist_slot = rangeDecodeInt(&coder, probs_dist_slot[len_min5_minus2], 6);
       bcnt = (dist_slot >> 1) - 1;
       dist = (2 | (dist_slot & 1));
       dist <<= bcnt;
@@ -1220,9 +1157,7 @@ static int parseLzmaHeader(const uint8_t *p_src, uint8_t *p_lc, uint8_t *p_lp,
     *p_uncompressed_len = 0;
     for (i = 0; i < 8; i++) {
       if (i < sizeof(size_t)) {
-        *p_uncompressed_len |=
-            (((size_t)p_src[5 + i])
-             << (i << 3));
+        *p_uncompressed_len |= (((size_t)p_src[5 + i]) << (i << 3));
       } else if (p_src[5 + i] > 0) {
         return R_ERR_OUTPUT_OVERFLOW;
       }
@@ -1273,7 +1208,7 @@ td::BufferSlice lzma_compress(td::Slice data) {
 }
 td::Result<td::BufferSlice> lzma_decompress(td::Slice data,
                                             int max_decompressed_size) {
-                                            std::size_t dst_len = max_decompressed_size;
+  std::size_t dst_len = max_decompressed_size;
   auto output = std::vector<uint8_t>(dst_len);
   tinyLzmaDecompress(data.ubegin(), data.size(), output.data(), &dst_len);
   return td::BufferSlice{reinterpret_cast<const char *>(output.data()),
