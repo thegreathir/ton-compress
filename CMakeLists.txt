@@ -21,6 +21,9 @@ target_link_libraries(solution PRIVATE ton_crypto_lib)
 add_executable(solution_lzma_long solution_lzma_long.cpp)
 target_link_libraries(solution_lzma_long PRIVATE ton_crypto_lib)
 
+add_executable(solution_tiny_lzma solution_tiny_lzma.cpp)
+target_link_libraries(solution_tiny_lzma PRIVATE ton_crypto_lib)
+
 add_executable(solution_evolve solution_evolve.cpp)
 target_link_libraries(solution_evolve PRIVATE ton_crypto_lib)
 
