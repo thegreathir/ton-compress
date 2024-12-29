@@ -5,16 +5,6 @@ project(ton-compress-contest LANGUAGES CXX)
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
-if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
-    add_compile_options(--coverage)
-    add_link_options(--coverage)
-elseif(CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
-    add_compile_options(-fprofile-instr-generate -fcoverage-mapping)
-    add_link_options(-fprofile-instr-generate)
-endif()
-
-
-
 include_directories(
     include
     include/crypto
@@ -30,6 +20,9 @@ target_link_libraries(solution PRIVATE ton_crypto_lib)
 
 add_executable(solution_lzma_long solution_lzma_long.cpp)
 target_link_libraries(solution_lzma_long PRIVATE ton_crypto_lib)
+
+add_executable(solution_evolve solution_evolve.cpp)
+target_link_libraries(solution_evolve PRIVATE ton_crypto_lib)
 
 # 01 - Cells.cpp
 add_executable(Cells "01 - Cells.cpp")
