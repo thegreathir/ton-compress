@@ -657,7 +657,7 @@ int tinyLzmaCompress(const uint8_t *p_src, size_t src_len, uint8_t *p_dst,
   hdr_len = *p_dst_len;
   RET_IF_ERROR(writeLzmaHeader(p_dst, &hdr_len, src_len, 1));
   cmprs_len = *p_dst_len - hdr_len;
-  RET_IF_ERROR(lzmaEncode(p_src, src_len, p_dst + hdr_len, &cmprs_len, 1));
+  RET_IF_ERROR(lzmaEncode(p_src, src_len, p_dst + hdr_len, &cmprs_len, 0));
   *p_dst_len = hdr_len + cmprs_len;
   return R_OK;
 }
