@@ -1198,7 +1198,9 @@ int tinyLzmaDecompress(const uint8_t *p_src, size_t src_len, uint8_t *p_dst,
 #include <iostream>
 td::BufferSlice lzma_compress(td::Slice data) {
   const std::size_t src_len = data.size();
-  auto dst_len = std::min(src_len + (src_len >> 2) + 4096, 2UL << 20);
+  auto dst_len = src_len + (src_len >> 2) + 4096;
+  if (dst_len > 2UL << 20)
+    dst_len = 2UL << 20;
   auto output = td::BufferSlice(dst_len);
   tinyLzmaCompress(data.ubegin(), src_len, reinterpret_cast<uint8_t *>(output.data()), &dst_len);
   output.truncate(dst_len);
