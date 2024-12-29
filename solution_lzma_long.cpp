@@ -85,10 +85,6 @@ typedef size_t SizeT;
 typedef int BoolInt;
 #define True 1
 #define False 0
-#ifdef _WIN32
-#else
-#define MY_STD_CALL 
-#endif
 #ifdef _MSC_VER
 #if _MSC_VER >= 1300
 #define MY_NO_INLINE __declspec(noinline)
@@ -385,9 +381,8 @@ EXTERN_C_END
 #ifndef __LZMA_LIB_H
 #define __LZMA_LIB_H 
 EXTERN_C_BEGIN
-#define MY_STDAPI int MY_STD_CALL
 #define LZMA_PROPS_SIZE 5
-MY_STDAPI LzmaCompress(unsigned char *dest, size_t *destLen, const unsigned char *src, size_t srcLen,
+int LzmaCompress(unsigned char *dest, size_t *destLen, const unsigned char *src, size_t srcLen,
   unsigned char *outProps, size_t *outPropsSize,
   int level,
   unsigned dictSize,
@@ -397,7 +392,7 @@ MY_STDAPI LzmaCompress(unsigned char *dest, size_t *destLen, const unsigned char
   int fb,
   int numThreads
   );
-MY_STDAPI LzmaUncompress(unsigned char *dest, size_t *destLen, const unsigned char *src, SizeT *srcLen,
+int LzmaUncompress(unsigned char *dest, size_t *destLen, const unsigned char *src, SizeT *srcLen,
   const unsigned char *props, size_t propsSize);
 EXTERN_C_END
 #endif
@@ -4522,7 +4517,7 @@ void MatchFinder_CreateVTable(CMatchFinder *p, IMatchFinder *vTable)
  vTable->Skip = (Mf_Skip_Func)Bt4_MatchFinder_Skip;
   }
 }
-MY_STDAPI LzmaCompress(unsigned char *dest, size_t *destLen, const unsigned char *src, size_t srcLen,
+int LzmaCompress(unsigned char *dest, size_t *destLen, const unsigned char *src, size_t srcLen,
   unsigned char *outProps, size_t *outPropsSize,
   int level,
   unsigned dictSize,
@@ -4545,7 +4540,7 @@ MY_STDAPI LzmaCompress(unsigned char *dest, size_t *destLen, const unsigned char
   return LzmaEncode(dest, destLen, src, srcLen, &props, outProps, outPropsSize, 0,
    NULL, &g_Alloc, &g_Alloc);
 }
-MY_STDAPI LzmaUncompress(unsigned char *dest, size_t *destLen, const unsigned char *src, size_t *srcLen,
+int LzmaUncompress(unsigned char *dest, size_t *destLen, const unsigned char *src, size_t *srcLen,
   const unsigned char *props, size_t propsSize)
 {
   ELzmaStatus status;
