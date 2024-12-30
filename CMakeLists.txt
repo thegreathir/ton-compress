@@ -1,9 +1,9 @@
 cmake_minimum_required(VERSION 3.10)
 
-project(ton-compress-contest LANGUAGES CXX)
+project(ton-compress-contest LANGUAGES C CXX)
 
 set(CMAKE_CXX_STANDARD 17)
-set(CMAKE_CXX_STANDARD_REQUIRED ON)
+set(CMAKE_C_STANDARD 11)
 
 include_directories(
     include
@@ -32,6 +32,12 @@ target_link_libraries(solution_evolve_tiny_lzma PRIVATE ton_crypto_lib)
 
 add_executable(solution_zpaq solution_zpaq.cpp libzpaq.cpp)
 target_link_libraries(solution_zpaq PRIVATE ton_crypto_lib)
+
+add_library(bshuf STATIC bitshuffle_core.c iochain.c)
+
+add_executable(solution_tiny_lzma_bitshuffle solution_tiny_lzma_bitshuffle.cpp)
+target_link_libraries(solution_tiny_lzma_bitshuffle PRIVATE bshuf)
+target_link_libraries(solution_tiny_lzma_bitshuffle PRIVATE ton_crypto_lib)
 
 # 01 - Cells.cpp
 add_executable(Cells "01 - Cells.cpp")
