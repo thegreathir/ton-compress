@@ -48,7 +48,7 @@ void libzpaq::error(const char *msg) { std::cerr << msg; }
 
 td::BufferSlice compress(td::Slice data) {
   td::Ref<vm::Cell> root = vm::std_boc_deserialize(data).move_as_ok();
-  td::BufferSlice serialized = vm::std_boc_serialize(root, 2).move_as_ok();
+  td::BufferSlice serialized = vm::std_boc_serialize(root, 0).move_as_ok();
   ZpaqReader reader(serialized.as_slice());
   ZpaqWriter writer{};
   libzpaq::compress(&reader, &writer, "5", 0 ,0 ,false);

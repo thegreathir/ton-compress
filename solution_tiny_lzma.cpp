@@ -633,7 +633,7 @@ static int lzmaEncode(const uint8_t *p_src, size_t src_len, uint8_t *p_dst,
   ((LZ_DIST_MAX_PLUS1 > LZMA_DIC_MIN) ? LZ_DIST_MAX_PLUS1 : LZMA_DIC_MIN)
 #define LZMA_HEADER_LEN 13
 static int writeLzmaHeader(uint8_t *p_dst, size_t *p_dst_len,
-                          size_t uncompressed_len,
+                           size_t uncompressed_len,
                            uint8_t uncompressed_len_known) {
   uint32_t i;
   if (*p_dst_len < LZMA_HEADER_LEN)
@@ -1194,7 +1194,6 @@ int tinyLzmaDecompress(const uint8_t *p_src, size_t src_len, uint8_t *p_dst,
   return R_OK;
 }
 #include "td/utils/base64.h"
-#include "td/utils/lz4.h"
 #include "vm/boc.h"
 #include <iostream>
 td::BufferSlice lzma_compress(td::Slice data) {
@@ -1203,7 +1202,8 @@ td::BufferSlice lzma_compress(td::Slice data) {
   if (dst_len > 2UL << 20)
     dst_len = 2UL << 20;
   auto output = td::BufferSlice(dst_len);
-  tinyLzmaCompress(data.ubegin(), src_len, reinterpret_cast<uint8_t *>(output.data()), &dst_len);
+  tinyLzmaCompress(data.ubegin(), src_len,
+                   reinterpret_cast<uint8_t *>(output.data()), &dst_len);
   output.truncate(dst_len);
   return output;
 }
@@ -1211,34 +1211,18 @@ td::Result<td::BufferSlice> lzma_decompress(td::Slice data,
                                             int max_decompressed_size) {
   std::size_t dst_len = max_decompressed_size;
   auto output = td::BufferSlice(dst_len);
-  tinyLzmaDecompress(data.ubegin(), data.size(),  reinterpret_cast<uint8_t *>(output.data()), &dst_len);
+  tinyLzmaDecompress(data.ubegin(), data.size(),
+                     reinterpret_cast<uint8_t *>(output.data()), &dst_len);
   output.truncate(dst_len);
   return output;
 }
-enum class CompressionaAlgorithm {
-  LZMA,
-  LZ4,
-};
-td::BufferSlice compress(td::Slice data, CompressionaAlgorithm algorithm) {
+td::BufferSlice compress(td::Slice data) {
   td::Ref<vm::Cell> root = vm::std_boc_deserialize(data).move_as_ok();
   td::BufferSlice serialized = vm::std_boc_serialize(root, 0).move_as_ok();
-  switch (algorithm) {
-  case CompressionaAlgorithm::LZMA:
-    return lzma_compress(serialized);
-  case CompressionaAlgorithm::LZ4:
-    return td::lz4_compress(serialized);
-  }
+  return lzma_compress(serialized);
 }
-td::BufferSlice decompress(td::Slice data, CompressionaAlgorithm algorithm) {
-  td::BufferSlice serialized;
-  switch (algorithm) {
-  case CompressionaAlgorithm::LZMA:
-    serialized = lzma_decompress(data, 2 << 20).move_as_ok();
-    break;
-  case CompressionaAlgorithm::LZ4:
-    serialized = td::lz4_decompress(data, 2 << 20).move_as_ok();
-    break;
-  }
+td::BufferSlice decompress(td::Slice data) {
+  td::BufferSlice serialized = lzma_decompress(data, 2 << 20).move_as_ok();
   auto root = vm::std_boc_deserialize(serialized).move_as_ok();
   return vm::std_boc_serialize(root, 31).move_as_ok();
 }
@@ -1251,9 +1235,9 @@ int main() {
   CHECK(!base64_data.empty());
   td::BufferSlice data(td::base64_decode(base64_data).move_as_ok());
   if (mode == "compress") {
-    data = compress(data, CompressionaAlgorithm::LZMA);
+    data = compress(data);
   } else {
-    data = decompress(data, CompressionaAlgorithm::LZMA);
+    data = decompress(data);
   }
   std::cout << td::base64_encode(data) << std::endl;
 }
