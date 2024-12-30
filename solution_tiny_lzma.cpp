@@ -1221,7 +1221,7 @@ enum class CompressionaAlgorithm {
 };
 td::BufferSlice compress(td::Slice data, CompressionaAlgorithm algorithm) {
   td::Ref<vm::Cell> root = vm::std_boc_deserialize(data).move_as_ok();
-  td::BufferSlice serialized = vm::std_boc_serialize(root, 2).move_as_ok();
+  td::BufferSlice serialized = vm::std_boc_serialize(root, 0).move_as_ok();
   switch (algorithm) {
   case CompressionaAlgorithm::LZMA:
     return lzma_compress(serialized);
