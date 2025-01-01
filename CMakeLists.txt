@@ -38,6 +38,7 @@ add_library(bshuf STATIC bitshuffle_core.c iochain.c)
 add_executable(solution_tiny_lzma_bitshuffle solution_tiny_lzma_bitshuffle.cpp)
 target_link_libraries(solution_tiny_lzma_bitshuffle PRIVATE bshuf)
 target_link_libraries(solution_tiny_lzma_bitshuffle PRIVATE ton_crypto_lib)
+
 add_executable(stats stats.cpp)
 target_link_libraries(stats PRIVATE ton_crypto_lib)
 
