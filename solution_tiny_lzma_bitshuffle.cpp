@@ -1195,6 +1195,7 @@ int tinyLzmaDecompress(const uint8_t *p_src, size_t src_len, uint8_t *p_dst,
 }
 #include "td/utils/base64.h"
 #include "vm/boc.h"
+#include "bitshuffle_core.h"
 #include <iostream>
 td::BufferSlice lzma_compress(td::Slice data) {
   const std::size_t src_len = data.size();
@@ -1216,15 +1217,159 @@ td::Result<td::BufferSlice> lzma_decompress(td::Slice data,
   output.truncate(dst_len);
   return output;
 }
+// ---------------------------------------------------------------------------
+// Example: compress
+//   1) Deserialize your data into cells.
+//   2) Serialize with std_boc_serialize(..., flags=0).
+//   3) For each elem_size in [1..128], do:
+//       - pad the data if needed
+//       - bitshuffle
+//       - LZMA-compress
+//     pick whichever yields the smallest compressed blob
+//   4) Write a small header: [2 bytes elem_size] + [4 bytes padding]
+//   5) Append the best-compressed blob
+// ---------------------------------------------------------------------------
 td::BufferSlice compress(td::Slice data) {
+  // 1) Deserialize
   td::Ref<vm::Cell> root = vm::std_boc_deserialize(data).move_as_ok();
+  
+  // 2) Serialize (flags=0)
   td::BufferSlice serialized = vm::std_boc_serialize(root, 0).move_as_ok();
-  return lzma_compress(serialized);
+  const size_t original_size = serialized.size();
+
+  // Make an easy-to-use std::vector out of your serialized data
+  std::vector<uint8_t> input_bytes(original_size);
+  std::memcpy(input_bytes.data(), serialized.data(), original_size);
+
+  // Keep track of the best compression
+  size_t best_elem_size = 1;
+  size_t best_padding   = 0;
+  std::vector<uint8_t> best_compressed;
+  size_t best_size = SIZE_MAX;
+
+  // 3) Try all element sizes from 1 to 128
+  for (size_t es = 1; es <= 1024; es++) {
+    // 3a) Compute how much padding is needed
+    size_t remainder = original_size % es;
+    size_t pad = (remainder == 0) ? 0 : (es - remainder);
+    size_t padded_size = original_size + pad;
+
+    // 3b) Copy data into padded buffer
+    std::vector<uint8_t> padded_input(padded_size, 0);
+    std::memcpy(padded_input.data(), input_bytes.data(), original_size);
+    // (the extra bytes remain zero for padding)
+
+    // 3c) Allocate output buffer for bitshuffled data
+    //     Number of typed elements is padded_size / es
+    size_t num_elems = padded_size / es;
+    std::vector<uint8_t> shuffled_out(padded_size);
+
+    // 3d) Do the bitshuffle
+    int64_t ret = bshuf_bitshuffle(
+        padded_input.data(),      // in
+        shuffled_out.data(),      // out
+        num_elems,                // size (number of elements)
+        es,                       // elem_size
+        0                         // block_size=0 => automatic
+    );
+    if (ret < 0) {
+      // You may want to handle the error, skip, etc.
+      continue;
+    }
+
+    // 3e) LZMA compress the shuffled data
+    //     (Your own function that returns td::BufferSlice)
+    td::BufferSlice compressed_bs = lzma_compress(td::Slice{shuffled_out.data(), shuffled_out.size()});
+
+    // 3f) Track if this is better than what we have so far
+    if (compressed_bs.size() < best_size) {
+      best_elem_size = es;
+      best_padding   = pad;
+      best_size      = compressed_bs.size();
+
+      best_compressed.resize(best_size);
+      std::memcpy(best_compressed.data(), compressed_bs.data(), best_size);
+    }
+  }
+
+  // 4) Build the final output
+  //    We store a small 6-byte header:
+  //       [2 bytes for best_elem_size] + [4 bytes for best_padding]
+  //    Then the LZMA-compressed, bitshuffled data
+  const size_t header_size = 6;
+  std::vector<uint8_t> final_data(header_size + best_size, 0);
+
+  // Write element_size into 2 bytes
+  final_data[0] = static_cast<uint8_t>((best_elem_size >> 8) & 0xFF);
+  final_data[1] = static_cast<uint8_t>( best_elem_size       & 0xFF);
+
+  // Write padding into 4 bytes
+  final_data[2] = static_cast<uint8_t>((best_padding >> 24) & 0xFF);
+  final_data[3] = static_cast<uint8_t>((best_padding >> 16) & 0xFF);
+  final_data[4] = static_cast<uint8_t>((best_padding >>  8) & 0xFF);
+  final_data[5] = static_cast<uint8_t>( best_padding        & 0xFF);
+
+  // Append the best-compressed data
+  std::memcpy(final_data.data() + header_size, best_compressed.data(), best_size);
+
+  // Return as td::BufferSlice
+  return td::BufferSlice(td::Slice{final_data.data(), final_data.size()});
 }
+
+
+// ---------------------------------------------------------------------------
+// Example: decompress
+//   1) Read the 6-byte header: [2 bytes elem_size] + [4 bytes padding]
+//   2) LZMA-decompress the remainder
+//   3) bitunshuffle
+//   4) Remove the padding
+//   5) Deserialize => re-serialize with flags=31 (per your original code)
+// ---------------------------------------------------------------------------
 td::BufferSlice decompress(td::Slice data) {
-  td::BufferSlice serialized = lzma_decompress(data, 2 << 20).move_as_ok();
-  auto root = vm::std_boc_deserialize(serialized).move_as_ok();
-  return vm::std_boc_serialize(root, 31).move_as_ok();
+  // 1) Read the header
+  if (data.size() < 6) {
+    // handle error...
+    return td::BufferSlice();
+  }
+  const uint8_t* ptr = reinterpret_cast<const uint8_t*>(data.data());
+  size_t es = (static_cast<size_t>(ptr[0]) << 8) | ptr[1];
+  size_t pad = (static_cast<size_t>(ptr[2]) << 24)
+             | (static_cast<size_t>(ptr[3]) << 16)
+             | (static_cast<size_t>(ptr[4]) <<  8)
+             | (static_cast<size_t>(ptr[5]));
+
+  // 2) LZMA decompress the remainder
+  td::Slice lzma_part(ptr + 6, data.size() - 6);
+  td::BufferSlice bitshuffled = lzma_decompress(lzma_part, /*max_output_size=*/ 2 << 20).move_as_ok();
+
+  // 3) bitunshuffle
+  size_t bitshuffled_size = bitshuffled.size();
+  // This should match the padded_size used before => padded_size = bitshuffled_size.
+  size_t num_elems = bitshuffled_size / es;
+  std::vector<uint8_t> unshuffled(bitshuffled_size);
+
+  int64_t ret = bshuf_bitunshuffle(
+      bitshuffled.data(),      // in
+      unshuffled.data(),       // out
+      num_elems,               // size
+      es,                      // elem_size
+      0                        // block_size=0 => auto
+  );
+  if (ret < 0) {
+    // handle error...
+  }
+
+  // 4) Remove the padding
+  //    The "real" unpadded data size is (bitshuffled_size - pad)
+  size_t real_size = bitshuffled_size - pad;
+  std::vector<uint8_t> final_bytes(real_size);
+  std::memcpy(final_bytes.data(), unshuffled.data(), real_size);
+
+  // 5) Deserialize and re-serialize with flags=31
+  auto root = vm::std_boc_deserialize(td::Slice(final_bytes.data(), real_size)).move_as_ok();
+  td::BufferSlice result = vm::std_boc_serialize(root, 31).move_as_ok();
+
+  return result;
 }
 int main() {
   std::string mode;

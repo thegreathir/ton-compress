@@ -23,8 +23,151 @@ std::random_device rd;
 std::mt19937 rng(rd());
 
 const int POPULATION = 10;
-const int CHILDREN = 5;
+const int CHILDREN = 100;
 const int MUTATION = 5;
+const int CROSS = 5;
+const int NOT_CROSS = 1;
+
+struct Gene {
+public:
+  static int number_of_cells;
+
+  std::vector<int> perm;
+  int unfitness;
+
+  Gene(std::vector<int> perm, int unfitness)
+      : perm(perm), unfitness(unfitness) {}
+
+  Gene(bool fill = true) {
+    perm.clear();
+    unfitness = 1e9;
+
+    if (!fill)
+      return;
+
+    for (int i = 0; i < number_of_cells; i++) {
+      perm.push_back(i);
+    }
+
+    mutate(rng() % 10);
+    if (rng() % 2)
+      std::reverse(perm.begin(), perm.end());
+  }
+
+  void mutate(int cnt = 1) {
+    while (cnt--) {
+      int i = rng() % number_of_cells;
+      int j = rng() % number_of_cells;
+      std::swap(perm[i], perm[j]);
+    }
+  }
+
+  void apply(std::vector<int> &ret) const {
+    if (!perm.empty())
+      ret = perm;
+  }
+};
+
+int Gene::number_of_cells = -1;
+
+bool operator<(const Gene &a, const Gene &b) {
+  return a.unfitness < b.unfitness;
+}
+
+Gene PMX(const Gene &a, const Gene &b) {
+  int n = a.perm.size();
+  int l = rng() % n;
+  int r = rng() % n;
+  if (l > r) {
+    std::swap(l, r);
+  }
+
+  std::vector<int> perm(n, -1);
+  std::vector<bool> used(n);
+
+  std::vector<int> to(n), rev_b(n);
+  for (int i = 0; i < n; i++) {
+    rev_b[b.perm[i]] = i;
+  }
+
+  for (int i = 0; i < n; i++) {
+    to[i] = rev_b[a.perm[i]];
+  }
+
+  for (int i = l; i <= r; i++) {
+    perm[i] = a.perm[i];
+    used[a.perm[i]] = true;
+  }
+
+  for (int i = l; i <= r; i++) {
+    if (used[b.perm[i]]) {
+      continue;
+    }
+
+    int j = i;
+    std::vector<int> path;
+    while (perm[j] > -1) {
+      path.push_back(j);
+      j = to[j];
+    }
+
+    perm[j] = b.perm[i];
+    used[b.perm[i]] = true;
+
+    for (auto x : path) {
+      to[x] = j;
+    }
+  }
+
+  for (int i = 0; i < n; i++) {
+    if (perm[i] == -1) {
+      perm[i] = b.perm[i];
+    }
+  }
+
+  return Gene(perm, 0);
+}
+
+Gene OX1(const Gene &a, const Gene &b) {
+  int n = a.perm.size();
+  int l = rng() % n;
+  int r = rng() % n;
+  if (l > r) {
+    std::swap(l, r);
+  }
+
+  std::vector<int> perm(n, -1);
+  std::vector<bool> used(n);
+
+  for (int i = l; i <= r; i++) {
+    perm[i] = a.perm[i];
+    used[a.perm[i]] = true;
+  }
+
+  int j = 0;
+  for (int i = 0; i < n; i++) {
+    if (used[b.perm[i]]) {
+      continue;
+    }
+
+    if (j == l) {
+      j = r + 1;
+    }
+
+    perm[j] = b.perm[i];
+    j++;
+  }
+
+  return Gene(perm, 0);
+}
+
+Gene merge(const Gene &a, const Gene &b) {
+  if (rng() % (CROSS + NOT_CROSS) < NOT_CROSS)
+    return a;
+  if (rng() % 2)
+    return PMX(a, b);
+  return OX1(a, b);
+}
 
 struct CellSerializationInfo {
   bool special;
@@ -656,20 +799,13 @@ public:
     return (idx >= 0 && idx < root_count) ? roots.at(idx).cell
                                           : td::Ref<vm::Cell>{};
   }
-  void permute(std::vector<bool> mask) {
+  void permute(const Gene &gene) {
     std::vector<int> perm(cell_count);
     for (int i = 0; i < cell_count; i++) {
       perm[i] = i;
     }
     // int start = 0; // rng() % cell_count;
-    for (int i = 0; i < cell_count - 1; i++) {
-      // int end = std::min(start + 5, cell_count);
-      if (!mask.empty() && mask[i]) {
-        std::swap(perm[i], perm[i + 1]);
-        // std::reverse(perm.begin() + start, perm.begin() + end);
-      }
-      // start = end;
-    }
+    gene.apply(perm);
     // if(rng() % 2 == 0) {
     // std::reverse(perm.begin(), perm.end());
     // }
@@ -706,11 +842,8 @@ private:
   }
 };
 
-int number_of_cells = -1;
-
-td::Result<td::BufferSlice> my_std_boc_serialize(std::vector<bool> mask,
-                                                 td::Ref<vm::Cell> root,
-                                                 int mode = 0) {
+td::Result<td::BufferSlice>
+my_std_boc_serialize(const Gene &gene, td::Ref<vm::Cell> root, int mode = 0) {
   if (root.is_null()) {
     return td::Status::Error(
         "cannot serialize a null cell reference into a bag of cells");
@@ -720,8 +853,8 @@ td::Result<td::BufferSlice> my_std_boc_serialize(std::vector<bool> mask,
   auto res = boc.import_cells();
 
   auto myBoc = reinterpret_cast<MyBagOfCells *>(&boc);
-  myBoc->permute(mask);
-  number_of_cells = myBoc->cell_count;
+  myBoc->permute(gene);
+  Gene::number_of_cells = myBoc->cell_count;
 
   if (res.is_error()) {
     return res.move_as_error();
@@ -755,32 +888,6 @@ my_std_boc_deserialize(td::Slice data, bool can_be_empty = false,
   return std::move(root);
 }
 
-struct Gene {
-public:
-  std::vector<bool> mask;
-  int unfitness;
-
-  Gene(std::vector<bool> mask, int unfitness)
-      : mask(mask), unfitness(unfitness) {}
-  void mutate(int cnt = 1) {
-    while (cnt--) {
-      int idx = rng() % mask.size();
-      mask[idx] = !mask[idx];
-    }
-  }
-};
-
-bool operator<(const Gene &a, const Gene &b) {
-  return a.unfitness < b.unfitness;
-}
-Gene merge(const Gene &a, const Gene &b) {
-  std::vector<bool> mask;
-  for (int i = 0; i < a.mask.size(); i++) {
-    mask.push_back(rng() % 2 == 0 ? a.mask[i] : b.mask[i]);
-  }
-  return Gene(mask, 0);
-}
-
 td::BufferSlice compress(td::Slice data) {
   const auto start_time = std::chrono::steady_clock::now();
 
@@ -794,22 +901,15 @@ td::BufferSlice compress(td::Slice data) {
   td::Ref<vm::Cell> root = vm::std_boc_deserialize(data).move_as_ok();
 
   td::BufferSlice best =
-      td::lz4_compress(my_std_boc_serialize({}, root, 2).move_as_ok());
+      td::lz4_compress(my_std_boc_serialize(Gene(false), root, 2).move_as_ok());
   int normal_len = best.length();
   int attempts = 0;
 
-  auto generateGene = [&]() {
-    std::vector<bool> mask;
-    for (int i = 0; i < number_of_cells; i++) {
-      mask.push_back(rng() % 2 == 0);
-    }
-    return Gene(mask, 1e9);
-  };
   auto evalGene = [&](Gene &gene) {
     if (is_timeout()) {
       return;
     }
-    auto ser = my_std_boc_serialize(gene.mask, root, 2).move_as_ok();
+    auto ser = my_std_boc_serialize(gene, root, 2).move_as_ok();
     auto compressed = td::lz4_compress(ser);
     gene.unfitness = compressed.length();
 
@@ -820,7 +920,7 @@ td::BufferSlice compress(td::Slice data) {
 
   std::vector<Gene> population;
   for (int i = 0; i < POPULATION; i++) {
-    population.push_back(generateGene());
+    population.push_back(Gene());
     evalGene(population.back());
 
     if (is_timeout()) {
@@ -831,15 +931,33 @@ td::BufferSlice compress(td::Slice data) {
 
   while (true) {
     attempts++;
+    // std::cerr << "on attempt: #" << attempts << " best len: " <<
+    // best.length()
+    // << "\n";
 
     std::vector<Gene> childs, new_population;
+    std::vector<long long> partial_sum_unfitness;
+    long long tot_unfitness = 0;
+    for (auto &gene : population) {
+      tot_unfitness += gene.unfitness;
+      partial_sum_unfitness.push_back(tot_unfitness);
+    }
+
+    auto get_random_by_unfittness = [&]() -> Gene & {
+      long long rnd = rng() % tot_unfitness;
+      int ind = std::lower_bound(partial_sum_unfitness.begin(),
+                                 partial_sum_unfitness.end(), rnd) -
+                partial_sum_unfitness.begin();
+      return population[ind];
+    };
+
     for (int i = 0; i < CHILDREN; i++) {
       if (is_timeout()) {
         break;
       }
-      int par1 = rng() % population.size();
-      int par2 = rng() % population.size();
-      auto child = merge(population[par1], population[par2]);
+      auto child =
+          merge(get_random_by_unfittness(), get_random_by_unfittness());
+      // merge(get_random_by_unfittness(), get_random_by_unfittness());
       child.mutate(rng() % MUTATION);
       evalGene(child);
       childs.push_back(child);
@@ -849,27 +967,28 @@ td::BufferSlice compress(td::Slice data) {
     }
 
     std::sort(childs.begin(), childs.end());
-    int it1 = 0;
-    int it2 = 0;
-    while (new_population.size() < population.size()) {
-      if (it1 < population.size() && it2 < childs.size()) {
-        if (population[it1].unfitness < childs[it2].unfitness) {
-          new_population.push_back(population[it1]);
-          it1++;
-        } else {
-          new_population.push_back(childs[it2]);
-          it2++;
-        }
-      } else if (it1 < population.size()) {
-        new_population.push_back(population[it1]);
-        it1++;
-      } else {
-        new_population.push_back(childs[it2]);
-        it2++;
-      }
-    }
+    childs.resize(POPULATION);
+    // int it1 = 0;
+    // int it2 = 0;
+    // while (new_population.size() < population.size()) {
+    //   if (it1 < population.size() && it2 < childs.size()) {
+    //     if (population[it1].unfitness < childs[it2].unfitness) {
+    //       new_population.push_back(population[it1]);
+    //       it1++;
+    //     } else {
+    //       new_population.push_back(childs[it2]);
+    //       it2++;
+    //     }
+    //   } else if (it1 < population.size()) {
+    //     new_population.push_back(population[it1]);
+    //     it1++;
+    //   } else {
+    //     new_population.push_back(childs[it2]);
+    //     it2++;
+    //   }
+    // }
 
-    population = std::move(new_population);
+    population = std::move(childs);
 
     if (is_timeout()) {
       break;
@@ -879,6 +998,8 @@ td::BufferSlice compress(td::Slice data) {
   // std::cerr << "best len: " << best.length() << "\n";
   // std::cerr << "normal len: " << normal_len << "\n";
   // std::cerr << "attempts: " << attempts << "\n";
+  // std::cerr << "score: " << 2.0 * data.size() / (data.size() + best.length())
+  //           << "\n";
   return best;
 }
 
