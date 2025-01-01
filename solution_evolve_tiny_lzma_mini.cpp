@@ -2056,7 +2056,7 @@ td::BufferSlice compress(td::Slice data) {
  td::Ref<vm::Cell> root = vm::std_boc_deserialize(data).move_as_ok();
 
  td::BufferSlice best =
- lzma_compress(my_std_boc_serialize(Gene(false), root, 2).move_as_ok());
+ lzma_compress(my_std_boc_serialize(Gene(false), root, 0).move_as_ok());
  int normal_len = best.length();
  int attempts = 0;
 
@@ -2065,7 +2065,7 @@ td::BufferSlice compress(td::Slice data) {
  gene.unfitness = -1;
  return;
  }
- auto ser = my_std_boc_serialize(gene, root, 2).move_as_ok();
+ auto ser = my_std_boc_serialize(gene, root, 0).move_as_ok();
  auto compressed = lzma_compress(ser);
  gene.unfitness = compressed.length();
 

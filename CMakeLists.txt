@@ -38,6 +38,23 @@ add_library(bshuf STATIC bitshuffle_core.c iochain.c)
 add_executable(solution_tiny_lzma_bitshuffle solution_tiny_lzma_bitshuffle.cpp)
 target_link_libraries(solution_tiny_lzma_bitshuffle PRIVATE bshuf)
 target_link_libraries(solution_tiny_lzma_bitshuffle PRIVATE ton_crypto_lib)
+add_executable(stats stats.cpp)
+target_link_libraries(stats PRIVATE ton_crypto_lib)
+
+add_executable(solution_separate_header solution_separate_header.cpp)
+target_link_libraries(solution_separate_header PRIVATE ton_crypto_lib)
+
+add_executable(solution_lzma_separate_header solution_lzma_separate_header.cpp)
+target_link_libraries(solution_lzma_separate_header PRIVATE ton_crypto_lib)
+
+add_executable(solution_evolve_lzma_separate_header solution_evolve_lzma_separate_header.cpp)
+target_link_libraries(solution_evolve_lzma_separate_header PRIVATE ton_crypto_lib)
+
+add_executable(solution_sorted_lzma_separate_header solution_sorted_lzma_separate_header.cpp)
+target_link_libraries(solution_sorted_lzma_separate_header PRIVATE ton_crypto_lib)
+
+add_executable(solution_dummy_lzma solution_dummy_lzma.cpp)
+target_link_libraries(solution_dummy_lzma PRIVATE ton_crypto_lib)
 
 # 01 - Cells.cpp
 add_executable(Cells "01 - Cells.cpp")
