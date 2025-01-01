@@ -676,13 +676,13 @@ public:
       td::BufferSlice bs(
           reinterpret_cast<const char *>(cell.dc_ref->get_data()), cur_size);
 
-      cell_stats.stats["id"] = "\"" + std::to_string(cell.new_idx) + "\"";
+      cell_stats.stats["id"] = std::to_string(cell.new_idx);
       cell_stats.stats["content"] = "\"" + td::base64_encode(bs) + "\"";
       cell_stats.stats["special"] = cell.is_special() ? "true" : "false";
 
       std::string refs = "[";
       for (int i = 0; i < cell.ref_num; i++) {
-        refs += "\"" + std::to_string(cell.ref_idx[i]) + "\"";
+        refs += std::to_string(cell.ref_idx[i]);
         if (i != cell.ref_num - 1) {
           refs += ", ";
         }
