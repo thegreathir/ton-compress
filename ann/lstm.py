@@ -19,6 +19,7 @@ import torch
 import torch.nn as nn
 import tqdm
 import random
+import os
 from torch.utils.data import Dataset, DataLoader, random_split, Subset
 
 
@@ -171,14 +172,14 @@ def evaluate(model, dataloader, criterion, device="cpu"):
 def main(args):
     # Hyperparameters
     json_path = args.json_path
-    seq_length = 128
+    seq_length = 256
     batch_size = 64
     hidden_size = 128
-    num_layers = 1
-    num_epochs = 5
+    num_layers = 3
+    num_epochs = 1
     lr = 1e-3
     # Number of chunks for chunk-based training
-    num_chunks = 7
+    num_chunks = 25
     device = "cuda" if torch.cuda.is_available() else "cpu"
     print(f"Using device: {device}")
     
@@ -198,57 +199,65 @@ def main(args):
     
     # 4.3 Instantiate model, loss, optimizer
     model = BitLSTM(hidden_size=hidden_size, num_layers=num_layers).to(device)
-    criterion = nn.BCEWithLogitsLoss()
-    optimizer = torch.optim.Adam(model.parameters(), lr=lr)
-    
-    # 4.4 Track best model
-    best_val_loss = float('inf')
+
     best_checkpoint_path = "best_bit_lstm_model.pth"
+    if os.path.exists(best_checkpoint_path):
+        # If it does, load it and skip training
+        print(f"Found existing best model checkpoint: {best_checkpoint_path}")
+        print("Loading the model, skipping training...")
+        model.load_state_dict(torch.load(best_checkpoint_path, map_location=device))
 
-    all_train_indices = list(range(train_size))
-    random.shuffle(all_train_indices)
+    else:
+        criterion = nn.BCEWithLogitsLoss()
+        optimizer = torch.optim.Adam(model.parameters(), lr=lr)
+        
+        # 4.4 Track best model
+        best_val_loss = float('inf')
 
-    # We'll define chunk_size so that we train on train_dataset in segments
-    chunk_size = train_size // num_chunks
-    if chunk_size == 0:
-        # Fallback if train_size < num_chunks
-        chunk_size = train_size
+        all_train_indices = list(range(train_size))
+        random.shuffle(all_train_indices)
+
+        # We'll define chunk_size so that we train on train_dataset in segments
+        chunk_size = train_size // num_chunks
+        if chunk_size == 0:
+            # Fallback if train_size < num_chunks
+            chunk_size = train_size
+        
+        for epoch in range(num_epochs):
+            print(f"Epoch {epoch+1}/{num_epochs}")
+            start_idx = 0
+            for chunk_idx in range(num_chunks):
+                print(f"  Chunk {chunk_idx+1}/{num_chunks}")
+                end_idx = min(start_idx + chunk_size, train_size)
+                if start_idx >= end_idx:
+                    break
+                
+                # 6) Take a slice of the *shuffled* indices
+                chunk_indices = all_train_indices[start_idx:end_idx]
+                
+                # 7) Build a Subset from the train_dataset with these chunk_indices
+                chunk_subset = Subset(train_dataset, chunk_indices)
+                chunk_loader = DataLoader(chunk_subset, batch_size=batch_size, shuffle=True)
+                
+                # Train on this chunk
+                train_loss = train_one_pass(model, chunk_loader, criterion, optimizer, device=device)
+                val_loss = evaluate(model, val_loader, criterion, device=device)
+                
+                print(f"Train Loss: {train_loss:.4f} | Val Loss: {val_loss:.4f}")
+                
+                # Check if this is the best model so far
+                if val_loss < best_val_loss:
+                    best_val_loss = val_loss
+                    torch.save(model.state_dict(), best_checkpoint_path)
+                    print(f"  [*] New best model saved at epoch {epoch+1} with val_loss={val_loss:.4f}")
+        
+        print(f"Training complete. Best validation loss: {best_val_loss:.4f}")
+        print(f"Best model is stored at '{best_checkpoint_path}'")
     
-    for epoch in range(num_epochs):
-        print(f"Epoch {epoch+1}/{num_epochs}")
-        start_idx = 0
-        for chunk_idx in range(num_chunks):
-            print(f"  Chunk {chunk_idx+1}/{num_chunks}")
-            end_idx = min(start_idx + chunk_size, train_size)
-            if start_idx >= end_idx:
-                break
-            
-            # 6) Take a slice of the *shuffled* indices
-            chunk_indices = all_train_indices[start_idx:end_idx]
-            
-            # 7) Build a Subset from the train_dataset with these chunk_indices
-            chunk_subset = Subset(train_dataset, chunk_indices)
-            chunk_loader = DataLoader(chunk_subset, batch_size=batch_size, shuffle=True)
-            
-            # Train on this chunk
-            train_loss = train_one_pass(model, chunk_loader, criterion, optimizer, device=device)
-            val_loss = evaluate(model, val_loader, criterion, device=device)
-            
-            print(f"Train Loss: {train_loss:.4f} | Val Loss: {val_loss:.4f}")
-            
-            # Check if this is the best model so far
-            if val_loss < best_val_loss:
-                best_val_loss = val_loss
-                torch.save(model.state_dict(), best_checkpoint_path)
-                print(f"  [*] New best model saved at epoch {epoch+1} with val_loss={val_loss:.4f}")
-    
-    print(f"Training complete. Best validation loss: {best_val_loss:.4f}")
-    print(f"Best model is stored at '{best_checkpoint_path}'")
-    
-    # 4.5 Convert best model to TorchScript & Save
-    #     - first load the best checkpoint, then script/trace the model, and save
-    model.load_state_dict(torch.load(best_checkpoint_path, map_location=device))
+        model.load_state_dict(torch.load(best_checkpoint_path, map_location=device))
+
     model.eval()
+    model.to("cpu")
     
     # We must feed an example of the correct shape to trace or script
     # Example input shape: [batch=1, seq_len=seq_length, input_size=1]
