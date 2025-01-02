@@ -84,3 +84,5 @@ target_link_libraries(Dictionary PRIVATE ton_crypto_lib)
 # 07 - Augmented dictionary.cpp
 add_executable(AugmentedDictionary "07 - Augmented dictionary.cpp")
 target_link_libraries(AugmentedDictionary PRIVATE ton_crypto_lib)
+
+add_subdirectory(ann)
