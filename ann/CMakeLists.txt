@@ -11,6 +11,8 @@ find_package(Torch REQUIRED)
 
 add_executable(model_arith model_arith.cpp)
 
-target_link_libraries(model_arith "${TORCH_LIBRARIES}")
+add_subdirectory(arithcoder)
+
+target_link_libraries(model_arith "${TORCH_LIBRARIES}" arithcoder ton_crypto_lib)
 
 set_property(TARGET model_arith PROPERTY CXX_STANDARD 17)
