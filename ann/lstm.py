@@ -192,7 +192,7 @@ def main(args):
     num_epochs = 10
     lr = 1e-3
     # Number of chunks for chunk-based training
-    num_chunks = 20
+    num_chunks = 7
     device = "cuda" if torch.cuda.is_available() else "cpu"
     print(f"Using device: {device}")
 
@@ -247,6 +247,7 @@ def main(args):
 
                 # 6) Take a slice of the *shuffled* indices
                 chunk_indices = all_train_indices[start_idx:end_idx]
+                start_idx = end_idx
 
                 # 7) Build a Subset from the train_dataset with these chunk_indices
                 chunk_subset = Subset(train_dataset, chunk_indices)
