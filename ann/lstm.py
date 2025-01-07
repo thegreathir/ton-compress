@@ -70,10 +70,19 @@ class Base64BitsDataset(Dataset):
         # Build a list of (seq_length+1)-long chunks
         self.samples = []
         for bits in tqdm.tqdm(all_bit_sequences, desc="Building samples", unit="sequence"):
-            # We create all possible consecutive sequences of length (seq_length+1)
-            for start_idx in range(0, len(bits) - seq_length):
-                chunk = bits[start_idx : start_idx + seq_length + 1]
-                self.samples.append(chunk)
+            L = len(bits)
+            for i in range(L):
+                prefix = bits[: i+1]
+
+                if len(prefix) < self.seq_length:
+                    # left-pad with zeros
+                    padded_prefix = [0]*(self.seq_length - len(prefix)) + prefix
+                else:
+                    # take the last 256 bits
+                    padded_prefix = prefix[-self.seq_length:]
+
+                # Store it
+                self.samples.append(padded_prefix)
         print(f"Total samples: {len(self.samples)}")
     
     def __len__(self):
@@ -175,7 +184,7 @@ def main(args):
     seq_length = 256
     batch_size = 64
     hidden_size = 128
-    num_layers = 3
+    num_layers = 1
     num_epochs = 1
     lr = 1e-3
     # Number of chunks for chunk-based training
