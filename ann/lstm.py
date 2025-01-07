@@ -35,14 +35,15 @@ class Base64BitsDataset(Dataset):
       4. Splits the bit list into overlapping sequences of length (seq_length+1).
          -> The first seq_length bits are the input, and the *next* bit is the target.
     """
+
     def __init__(self, json_path, seq_length=128):
         super().__init__()
         self.seq_length = seq_length
-        
+
         # Load JSON
-        with open(json_path, 'r') as f:
+        with open(json_path, "r") as f:
             data = json.load(f)
-        
+
         # Convert each base64-encoded body into a list of bits
         all_bit_sequences = []
         for item in tqdm.tqdm(data, desc="Processing JSON", unit="item"):
@@ -55,39 +56,41 @@ class Base64BitsDataset(Dataset):
                 continue
             # Decode from base64 into raw bytes
             body_bytes = base64.b64decode(b64body)
-            
+
             # Convert each byte to 8 bits
             bits = []
             for byte in body_bytes:
                 for i in range(8):
                     bit = (byte >> (7 - i)) & 1
                     bits.append(bit)
-            
+
             # Only add non-empty bit sequences
             if len(bits) > 0:
                 all_bit_sequences.append(bits)
-        
+
         # Build a list of (seq_length+1)-long chunks
         self.samples = []
-        for bits in tqdm.tqdm(all_bit_sequences, desc="Building samples", unit="sequence"):
+        for bits in tqdm.tqdm(
+            all_bit_sequences, desc="Building samples", unit="sequence"
+        ):
             L = len(bits)
             for i in range(L):
-                prefix = bits[: i+1]
+                prefix = bits[: i + 1]
 
                 if len(prefix) < self.seq_length:
                     # left-pad with zeros
-                    padded_prefix = [0]*(self.seq_length - len(prefix)) + prefix
+                    padded_prefix = [0] * (self.seq_length - len(prefix)) + prefix
                 else:
                     # take the last 256 bits
-                    padded_prefix = prefix[-self.seq_length:]
+                    padded_prefix = prefix[-self.seq_length :]
 
                 # Store it
                 self.samples.append(padded_prefix)
         print(f"Total samples: {len(self.samples)}")
-    
+
     def __len__(self):
         return len(self.samples)
-    
+
     def __getitem__(self, idx):
         """
         Returns:
@@ -96,7 +99,7 @@ class Base64BitsDataset(Dataset):
         """
         chunk = self.samples[idx]
         x = chunk[:-1]  # all but last
-        y = chunk[1:]   # all but first
+        y = chunk[1:]  # all but first
         x_tensor = torch.tensor(x, dtype=torch.float32)
         y_tensor = torch.tensor(y, dtype=torch.float32)
         return x_tensor, y_tensor
@@ -112,22 +115,23 @@ class BitLSTM(nn.Module):
     - Hidden size = user-defined
     - Output size = 1 (logit for next bit)
     """
+
     def __init__(self, hidden_size=128, num_layers=1):
         super().__init__()
         self.hidden_size = hidden_size
         self.num_layers = num_layers
-        
+
         # LSTM: input shape is (batch, seq_len, input_size)
         self.lstm = nn.LSTM(
             input_size=1,
             hidden_size=hidden_size,
             num_layers=num_layers,
-            batch_first=True
+            batch_first=True,
         )
-        
+
         # Final linear layer to map LSTM hidden state -> 1-dimensional output
         self.fc = nn.Linear(hidden_size, 1)
-    
+
     def forward(self, x):
         """
         Args:
@@ -149,15 +153,15 @@ def train_one_pass(model, dataloader, criterion, optimizer, device="cpu"):
     for x, y in tqdm.tqdm(dataloader, desc="Training", unit="batch"):
         x = x.unsqueeze(-1).to(device)  # shape: (batch, seq_length, 1)
         y = y.unsqueeze(-1).to(device)  # shape: (batch, seq_length, 1)
-        
+
         optimizer.zero_grad()
         logits = model(x)  # (batch, seq_length, 1)
         loss = criterion(logits, y)
         loss.backward()
         optimizer.step()
-        
+
         total_loss += loss.item()
-    
+
     return total_loss / len(dataloader)
 
 
@@ -165,10 +169,10 @@ def evaluate(model, dataloader, criterion, device="cpu"):
     model.eval()
     total_loss = 0.0
     with torch.no_grad():
-        for x, y in dataloader:
+        for x, y in tqdm.tqdm(dataloader, desc="Evaluating", unit="batch"):
             x = x.unsqueeze(-1).to(device)
             y = y.unsqueeze(-1).to(device)
-            
+
             logits = model(x)
             loss = criterion(logits, y)
             total_loss += loss.item()
@@ -181,31 +185,31 @@ def evaluate(model, dataloader, criterion, device="cpu"):
 def main(args):
     # Hyperparameters
     json_path = args.json_path
-    seq_length = 256
+    seq_length = 192
     batch_size = 64
-    hidden_size = 128
+    hidden_size = 48
     num_layers = 1
-    num_epochs = 1
+    num_epochs = 10
     lr = 1e-3
     # Number of chunks for chunk-based training
-    num_chunks = 25
+    num_chunks = 20
     device = "cuda" if torch.cuda.is_available() else "cpu"
     print(f"Using device: {device}")
-    
+
     # 4.1 Create dataset & dataloader
     dataset = Base64BitsDataset(json_path, seq_length=seq_length)
     if len(dataset) == 0:
         print("Dataset is empty. Exiting...")
         return
-    
+
     # 4.2 Split dataset into train/val
     val_ratio = 0.1
     val_size = int(len(dataset) * val_ratio)
     train_size = len(dataset) - val_size
     train_dataset, val_dataset = random_split(dataset, [train_size, val_size])
-    
+
     val_loader = DataLoader(val_dataset, batch_size=batch_size, shuffle=False)
-    
+
     # 4.3 Instantiate model, loss, optimizer
     model = BitLSTM(hidden_size=hidden_size, num_layers=num_layers).to(device)
 
@@ -219,9 +223,9 @@ def main(args):
     else:
         criterion = nn.BCEWithLogitsLoss()
         optimizer = torch.optim.Adam(model.parameters(), lr=lr)
-        
+
         # 4.4 Track best model
-        best_val_loss = float('inf')
+        best_val_loss = float("inf")
 
         all_train_indices = list(range(train_size))
         random.shuffle(all_train_indices)
@@ -231,7 +235,7 @@ def main(args):
         if chunk_size == 0:
             # Fallback if train_size < num_chunks
             chunk_size = train_size
-        
+
         for epoch in range(num_epochs):
             print(f"Epoch {epoch+1}/{num_epochs}")
             start_idx = 0
@@ -240,41 +244,47 @@ def main(args):
                 end_idx = min(start_idx + chunk_size, train_size)
                 if start_idx >= end_idx:
                     break
-                
+
                 # 6) Take a slice of the *shuffled* indices
                 chunk_indices = all_train_indices[start_idx:end_idx]
-                
+
                 # 7) Build a Subset from the train_dataset with these chunk_indices
                 chunk_subset = Subset(train_dataset, chunk_indices)
-                chunk_loader = DataLoader(chunk_subset, batch_size=batch_size, shuffle=True)
-                
+                chunk_loader = DataLoader(
+                    chunk_subset, batch_size=batch_size, shuffle=True
+                )
+
                 # Train on this chunk
-                train_loss = train_one_pass(model, chunk_loader, criterion, optimizer, device=device)
+                train_loss = train_one_pass(
+                    model, chunk_loader, criterion, optimizer, device=device
+                )
                 val_loss = evaluate(model, val_loader, criterion, device=device)
-                
+
                 print(f"Train Loss: {train_loss:.4f} | Val Loss: {val_loss:.4f}")
-                
+
                 # Check if this is the best model so far
                 if val_loss < best_val_loss:
                     best_val_loss = val_loss
                     torch.save(model.state_dict(), best_checkpoint_path)
-                    print(f"  [*] New best model saved at epoch {epoch+1} with val_loss={val_loss:.4f}")
-        
+                    print(
+                        f"  [*] New best model saved at epoch {epoch+1} with val_loss={val_loss:.4f}"
+                    )
+
         print(f"Training complete. Best validation loss: {best_val_loss:.4f}")
         print(f"Best model is stored at '{best_checkpoint_path}'")
-    
+
         model.load_state_dict(torch.load(best_checkpoint_path, map_location=device))
 
     model.eval()
     model.to("cpu")
-    
+
     # We must feed an example of the correct shape to trace or script
     # Example input shape: [batch=1, seq_len=seq_length, input_size=1]
     example_input = torch.zeros((1, seq_length, 1), dtype=torch.float32).to(device)
-    
+
     # We'll use script rather than trace to handle dynamic LSTM internals
     scripted_model = torch.jit.script(model, example_inputs=(example_input,))
-    
+
     # Save the TorchScript model
     torchscript_path = "best_bit_lstm_model_jit.pt"
     scripted_model.save(torchscript_path)
@@ -283,8 +293,12 @@ def main(args):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument("--json_path", type=str, required=True,
-                        help="Path to the JSON file containing base64-encoded bodies.")
+    parser.add_argument(
+        "--json_path",
+        type=str,
+        required=True,
+        help="Path to the JSON file containing base64-encoded bodies.",
+    )
     args = parser.parse_args()
-    
+
     main(args)

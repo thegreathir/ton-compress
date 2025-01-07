@@ -13,7 +13,7 @@ Dataset logic:
         prefix = prefix[-256:]  # take the last 256 bits if prefix is longer
       label = bits[i+1]
 
-This ensures we can predict from the very beginning of the sequence, i.e., 
+This ensures we can predict from the very beginning of the sequence, i.e.,
 the first sample has a single bit in prefix plus 255 zeros on the left, etc.
 
 Usage:
@@ -33,6 +33,7 @@ import random
 import os
 from torch.utils.data import Dataset, DataLoader, random_split
 
+
 # =========================
 # 1. Dataset Class
 # =========================
@@ -50,14 +51,15 @@ class Base64BitsFCDataset(Dataset):
                - Else, take prefix[-256:] (last 256 bits).
              * label = bits[i+1] (the "next bit").
     """
+
     def __init__(self, json_path, seq_length=256):
         super().__init__()
         self.seq_length = seq_length
-        
+
         # Load JSON
-        with open(json_path, 'r') as f:
+        with open(json_path, "r") as f:
             data = json.load(f)
-        
+
         all_samples = []
         for item in tqdm.tqdm(data, desc="Processing JSON", unit="item"):
             if "content" not in item:
@@ -68,14 +70,14 @@ class Base64BitsFCDataset(Dataset):
                 continue
 
             b64body = item["content"]
-            
+
             # Decode from base64 into raw bytes
             try:
                 body_bytes = base64.b64decode(b64body)
             except Exception:
                 # Skip if there's a decoding error
                 continue
-            
+
             # Convert each byte to 8 bits
             bits = []
             for byte in body_bytes:
@@ -93,17 +95,17 @@ class Base64BitsFCDataset(Dataset):
             L = len(bits)
             for i in range(L - 1):
                 # prefix includes bits up to index i (so length i+1)
-                prefix = bits[: i+1]
+                prefix = bits[: i + 1]
                 # label is the next bit
-                label_bit = bits[i+1]
+                label_bit = bits[i + 1]
 
                 # Now pad or truncate prefix to length seq_length
                 if len(prefix) < self.seq_length:
                     # left-pad with zeros
-                    padded_prefix = [0]*(self.seq_length - len(prefix)) + prefix
+                    padded_prefix = [0] * (self.seq_length - len(prefix)) + prefix
                 else:
                     # take the last 256 bits
-                    padded_prefix = prefix[-self.seq_length:]
+                    padded_prefix = prefix[-self.seq_length :]
 
                 # Store it
                 all_samples.append((padded_prefix, label_bit))
@@ -121,7 +123,7 @@ class Base64BitsFCDataset(Dataset):
           y: the next bit (shape: [1])
         """
         prefix, label_bit = self.samples[idx]
-        
+
         x_tensor = torch.tensor(prefix, dtype=torch.float32)
         y_tensor = torch.tensor(label_bit, dtype=torch.float32)
         return x_tensor, y_tensor
@@ -136,17 +138,18 @@ class BitFC(nn.Module):
     Input size = seq_length (256).
     Output size = 1 (logit for next bit).
     """
+
     def __init__(self, seq_length=256, hidden_size=128):
         super().__init__()
         self.seq_length = seq_length
         self.hidden_size = hidden_size
-        
+
         self.net = nn.Sequential(
             nn.Linear(seq_length, hidden_size),
             nn.ReLU(),
             nn.Linear(hidden_size, hidden_size),
             nn.ReLU(),
-            nn.Linear(hidden_size, 1)  # single output for the next bit
+            nn.Linear(hidden_size, 1),  # single output for the next bit
         )
 
     def forward(self, x):
@@ -231,12 +234,14 @@ def main(args):
     criterion = nn.BCEWithLogitsLoss()
     optimizer = torch.optim.Adam(model.parameters(), lr=lr)
 
-    best_val_loss = float('inf')
+    best_val_loss = float("inf")
 
     # 4.4 Train
     for epoch in range(num_epochs):
         print(f"Epoch {epoch+1}/{num_epochs}")
-        train_loss = train_one_epoch(model, train_loader, criterion, optimizer, device=device)
+        train_loss = train_one_epoch(
+            model, train_loader, criterion, optimizer, device=device
+        )
         val_loss = evaluate(model, val_loader, criterion, device=device)
 
         print(f"  Train Loss: {train_loss:.4f} | Val Loss: {val_loss:.4f}")
@@ -258,10 +263,10 @@ def main(args):
     # We'll feed an example of the correct shape to script
     # Example input shape: [batch=1, seq_length]
     example_input = torch.zeros((1, seq_length), dtype=torch.float32)
-    
+
     # Script the model
     scripted_model = torch.jit.script(model, example_inputs=(example_input,))
-    
+
     # Save the TorchScript model
     torchscript_path = "best_bit_fc_model_jit.pt"
     scripted_model.save(torchscript_path)
@@ -270,8 +275,12 @@ def main(args):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument("--json_path", type=str, required=True,
-                        help="Path to the JSON file containing base64-encoded bodies.")
+    parser.add_argument(
+        "--json_path",
+        type=str,
+        required=True,
+        help="Path to the JSON file containing base64-encoded bodies.",
+    )
     args = parser.parse_args()
-    
+
     main(args)
