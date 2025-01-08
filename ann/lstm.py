@@ -185,14 +185,14 @@ def evaluate(model, dataloader, criterion, device="cpu"):
 def main(args):
     # Hyperparameters
     json_path = args.json_path
-    seq_length = 192
+    seq_length = 256
     batch_size = 64
-    hidden_size = 48
+    hidden_size = 40
     num_layers = 1
-    num_epochs = 10
+    num_epochs = 50
     lr = 1e-3
     # Number of chunks for chunk-based training
-    num_chunks = 7
+    num_chunks = 3
     device = "cuda" if torch.cuda.is_available() else "cpu"
     print(f"Using device: {device}")
 
