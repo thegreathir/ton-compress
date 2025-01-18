@@ -3,7 +3,7 @@ cmake_minimum_required(VERSION 3.10)
 project(ton-compress-contest LANGUAGES C CXX)
 
 set(CMAKE_CXX_STANDARD 17)
-set(CMAKE_C_STANDARD 11)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 include_directories(
     include
@@ -14,6 +14,10 @@ include_directories(
 )
 
 link_directories(.)
+
+set(Torch_DIR "${PROJECT_SOURCE_DIR}/libtorch/share/cmake/Torch")
+
+find_package(Torch REQUIRED)
 
 add_executable(solution solution.cpp)
 target_link_libraries(solution PRIVATE ton_crypto_lib)
@@ -56,6 +60,9 @@ target_link_libraries(solution_sorted_lzma_separate_header PRIVATE ton_crypto_li
 
 add_executable(solution_dummy_lzma solution_dummy_lzma.cpp)
 target_link_libraries(solution_dummy_lzma PRIVATE ton_crypto_lib)
+
+# add_executable(solution_lzma_LSTM_arith solution_lzma_LSTM_arith.cpp)
+# target_link_libraries(solution_lzma_LSTM_arith PRIVATE ton_crypto_lib ann "${TORCH_LIBRARIES}" arithcoder)
 
 # 01 - Cells.cpp
 add_executable(Cells "01 - Cells.cpp")

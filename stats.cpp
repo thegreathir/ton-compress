@@ -13,28 +13,33 @@ struct CellStats {
   std::map<std::string, std::string> stats;
 };
 std::vector<CellStats> stats;
+std::string all_contents;
+int test_num = -1;
 
 void print_stats() {
-  std::cout << "{[\n";
-  for (int i = 0; i < stats.size(); i++) {
-    auto &cell_stat = stats[i];
-    std::cout << "\t{\n";
-    int it = 0;
-    for (auto &kv : cell_stat.stats) {
-      std::cout << "\t\t\"" << kv.first << "\": " << kv.second;
-      if (++it == cell_stat.stats.size())
-        std::cout << "\n";
-      else
-        std::cout << ",\n";
-    }
+  // std::cout << "{[\n";
+  std::cout << all_contents.length() << "\n";
+  std::cout << "\t\"" << test_num << "\": \"" << td::base64_encode(all_contents) << "\",\n";
+  // int id=0;
+  // for (int i = 0; i < stats.size(); i++) {
+  //   auto &cell_stat = stats[i];
+  //   std::cout << "\t{\n";
+  //   int it = 0;
+  //   for (auto &kv : cell_stat.stats) {
+  //     std::cout << "\t\t\"" << kv.first << "\": " << kv.second;
+  //     if (++it == cell_stat.stats.size())
+  //       std::cout << "\n";
+  //     else
+  //       std::cout << ",\n";
+  //   }
 
-    std::cout << "\t}";
-    if (i + 1 < stats.size())
-      std::cout << ",\n";
-    else
-      std::cout << "\n";
-  }
-  std::cout << "]}\n";
+  //   std::cout << "\t}";
+    // if (i + 1 < stats.size())
+    // std::cout << ",\n";
+    // else
+    // std::cout << "\n";
+  // }
+  // std::cout << "]}\n";
 }
 
 struct CellSerializationInfo {
@@ -678,6 +683,8 @@ public:
 
       cell_stats.stats["id"] = std::to_string(cell.new_idx);
       cell_stats.stats["content"] = "\"" + td::base64_encode(bs) + "\"";
+      if(!cell.is_special())
+        all_contents += bs.data();
       cell_stats.stats["special"] = cell.is_special() ? "true" : "false";
 
       std::string refs = "[";
@@ -761,7 +768,16 @@ td::BufferSlice decompress(td::Slice data) {
   return vm::std_boc_serialize(root, 31).move_as_ok();
 }
 
-int main() {
+int main(int argc, char **argv) {
+  if (argc < 2) {
+    std::cerr << "Usage: " << argv[0] << " <compress|decompress> <test_num>\n\n"
+              << "Example:\n"
+              << "  " << argv[0] << " compress 0\n";
+    return 1;
+  }
+
+  test_num = atoi(argv[1]);
+
   std::string mode;
   std::cin >> mode;
   CHECK(mode == "compress" || mode == "decompress");

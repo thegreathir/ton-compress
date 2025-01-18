@@ -28,12 +28,16 @@
 #include <vector>
 
 #include "arithcoder/ArithmeticCoder.hpp"
+#include "model_arith.h"
 #include "td/utils/base64.h"
+
+const int CONTEXT_SIZE = 192;
+#define PAD
 
 /**************************************************************
  * 1) Utility: Convert raw bytes => bits, and bits => bytes
  **************************************************************/
-static std::vector<int> stringToBits(const std::string &inputBytes) {
+std::vector<int> stringToBits(const std::string &inputBytes) {
   std::vector<int> bits;
   bits.reserve(inputBytes.size() * 8);
   for (unsigned char c : inputBytes) {
@@ -46,7 +50,7 @@ static std::vector<int> stringToBits(const std::string &inputBytes) {
   return bits;
 }
 
-static std::string bitsToString(const std::vector<int> &bits) {
+std::string bitsToString(const std::vector<int> &bits) {
   // Group bits into bytes
   const size_t nBytes = bits.size() / 8;
   std::string output;
@@ -72,8 +76,8 @@ static std::string bitsToString(const std::vector<int> &bits) {
  *    - Take the final time-step's logit => apply sigmoid => probability.
  *    - If prefix empty, default to 0.5
  *********************************************************************/
-static float nextBitProbability(torch::jit::script::Module &model,
-                                const std::deque<int> &prefix) {
+float nextBitProbability(torch::jit::script::Module &model,
+                         const std::deque<int> &prefix) {
   if (prefix.empty()) {
     // If no prefix, we define p=0.5 or handle an empty LSTM input
     return 0.5f;
@@ -98,8 +102,8 @@ static float nextBitProbability(torch::jit::script::Module &model,
   return p;
 }
 
-std::string compress(torch::jit::script::Module &model,
-                     const std::vector<int> &bits) {
+std::string compressBits(torch::jit::script::Module &model,
+                         const std::vector<int> &bits) {
   std::string out;
   std::stringstream sout;
   BitOutputStream bout(sout);
@@ -109,13 +113,18 @@ std::string compress(torch::jit::script::Module &model,
     ArithmeticEncoder enc(32, bout);
 
     std::deque<int> prefix;
+#ifdef PAD
+    for (int i = 0; i < CONTEXT_SIZE; i++) {
+      prefix.push_back(0);
+    }
+#endif
 
     for (auto symbol : bits) {
       float p = nextBitProbability(model, prefix);
       freqs.set(1 - p);
       enc.write(freqs, static_cast<uint32_t>(symbol));
       prefix.push_back(symbol);
-      if (prefix.size() > 256) {
+      if (prefix.size() > CONTEXT_SIZE) {
         prefix.pop_front();
       }
     }
@@ -133,8 +142,8 @@ std::string compress(torch::jit::script::Module &model,
   return out;
 }
 
-std::vector<int> decompress(torch::jit::script::Module &model,
-                            const std::string &data, int size) {
+std::vector<int> decompressBits(torch::jit::script::Module &model,
+                                const std::string &data, int size) {
   std::vector<int> out;
   std::stringstream sin(data);
   BitInputStream bin(sin);
@@ -144,6 +153,11 @@ std::vector<int> decompress(torch::jit::script::Module &model,
     ArithmeticDecoder dec(32, bin);
 
     std::deque<int> prefix;
+#ifdef PAD
+    for (int i = 0; i < CONTEXT_SIZE; i++) {
+      prefix.push_back(0);
+    }
+#endif
 
     while (true) {
       float p = nextBitProbability(model, prefix);
@@ -151,11 +165,11 @@ std::vector<int> decompress(torch::jit::script::Module &model,
 
       uint32_t symbol = dec.read(freqs);
       out.push_back(symbol);
-      if(out.size() == size)
+      if (out.size() == size)
         break;
 
       prefix.push_back(symbol);
-      if (prefix.size() > 256) {
+      if (prefix.size() > CONTEXT_SIZE) {
         prefix.pop_front();
       }
     }
@@ -166,6 +180,20 @@ std::vector<int> decompress(torch::jit::script::Module &model,
   }
 
   return out;
+}
+
+torch::jit::script::Module loadModel(const std::string &modelPath) {
+  torch::jit::script::Module model;
+  try {
+    model = torch::jit::load(modelPath);
+  } catch (const c10::Error &e) {
+    std::cerr << "Error loading TorchScript model: " << modelPath << std::endl;
+    std::cerr << e.what() << std::endl;
+    assert(false);
+  }
+  model.eval();
+  model.to(torch::kCPU);
+  return model;
 }
 
 int main(int argc, char **argv) {
@@ -179,67 +207,63 @@ int main(int argc, char **argv) {
   std::string modelPath = argv[1];
 
   // 1) Load TorchScript model
-  torch::jit::script::Module model;
-  try {
-    model = torch::jit::load(modelPath);
-  } catch (const c10::Error &e) {
-    std::cerr << "Error loading TorchScript model: " << modelPath << std::endl;
-    std::cerr << e.what() << std::endl;
-    return 2;
-  }
-  model.eval();
-  model.to(torch::kCPU);
+  auto model = loadModel(modelPath);
 
   std::string base64_data;
 
   std::vector<int> init_sizes, comp_sizes;
+
+  auto start_time = std::chrono::high_resolution_clock::now();
 
   int cnt = 0;
   while (std::getline(std::cin, base64_data)) {
     if (base64_data.empty())
       continue;
     std::string data = td::base64_decode(base64_data).move_as_ok();
-    
-    auto bits = stringToBits(data);
-    auto res_bits = decompress(model, compress(model, bits), bits.size());
-    for(int i=0 ; i<bits.size() ; i++)
-        if(bits[i] != res_bits[i]) {
-            std::cerr << "KIR KHAR" << std::endl;
-            return 1;
-        }
-    std::cerr << "OK\n";
-    
-    std::string res = td::base64_encode(compress(model, stringToBits(data)));
+
+    // auto bits = stringToBits(data);
+    // auto res_bits =
+    //     decompressBits(model, compressBits(model, bits), bits.size());
+    // for (int i = 0; i < bits.size(); i++)
+    //   if (bits[i] != res_bits[i]) {
+    //     std::cerr << "KIR KHAR" << std::endl;
+    //     return 1;
+    //   }
+    // std::cerr << "OK\n";
+
+    std::string res =
+        td::base64_encode(compressBits(model, stringToBits(data)));
     // std::cout << base64_data << " -> " << res << std::endl;
     std::cout << "number: " << (++cnt) << " ";
     std::cout << base64_data.size() << " -> " << res.size() << std::endl;
     init_sizes.push_back(base64_data.size());
     comp_sizes.push_back(res.size());
-    if (cnt > 100)
-      break;
     // std::cout << res << std::endl;
   }
 
-  long double score = 0, red = 0, score_ed = 0, red_ed = 0;
+  long long x_int = 0, y_int = 0, yp_int = 0;
 
   for (int i = 0; i < init_sizes.size(); i++) {
-    long double x = init_sizes[i];
-    long double y = comp_sizes[i];
-    score += 2 * x / (x + y);
-    red += y / x;
-    long double yp = std::min(init_sizes[i], comp_sizes[i]);
-    score_ed += 2 * x / (x + yp);
-    red_ed += yp / x;
+    x_int += init_sizes[i];
+    y_int += comp_sizes[i];
+    yp_int += std::min(init_sizes[i], comp_sizes[i]);
   }
 
-  score /= init_sizes.size();
-  red /= init_sizes.size();
-  score_ed /= init_sizes.size();
-  red_ed /= init_sizes.size();
+  long double x = x_int, y = y_int, yp = yp_int;
+
+  long double score = 2 * x / (x + y);
+  long double red = y / x;
+  long double score_ed = 2 * x / (x + yp);
+  long double red_ed = yp / x;
 
   std::cout << "Score: " << score << std::endl;
   std::cout << "Reduction: " << red << std::endl;
   std::cout << "Score_ed: " << score_ed << std::endl;
   std::cout << "Reduction_ed: " << red_ed << std::endl;
+  std::cout << "Time in seconds: "
+            << std::chrono::duration<double>(
+                   std::chrono::high_resolution_clock::now() - start_time)
+                   .count()
+            << std::endl;
   return 0;
 }
